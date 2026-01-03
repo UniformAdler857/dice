@@ -327,8 +327,8 @@
                 const pg = new THREE.PlaneGeometry(100, 100);
                 this.dragPlane = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ visible: false }));
                 this.dragPlane.rotation.x = -Math.PI / 2;
-                // ERHÖHT: Setze die Ebene auf 6 (genug um nicht am Boden zu schleifen, aber nicht zu hoch)
-                this.dragPlane.position.y = 6;
+                // ERHÖHT: Setze die Ebene höher, um große Würfel (D10) sicher anzuheben
+                this.dragPlane.position.y = 10;
                 this.scene.add(this.dragPlane);
 
                 const getPos = (e) => {
@@ -377,7 +377,7 @@
                         // Begrenze die Bewegung, um ein Entkommen aus dem Käfig zu verhindern
                         this.jointBody.position.set(
                             Math.max(-lim, Math.min(lim, p.x)),
-                            Math.max(1, Math.min(10, p.y)),
+                            Math.max(5, Math.min(15, p.y)),
                             Math.max(-lim, Math.min(lim, p.z))
                         );
                     }
@@ -463,179 +463,106 @@
                         {n: new THREE.Vector3(0,0,1), v:3}, {n: new THREE.Vector3(0,0,-1), v:4}  // Z+ und Z-
                     ];
                 } else if (sides === 10) {
-                    // D10: Pentagonal Trapezohedron (Kite Form) - "Echter" D10
-                    // Vertices: 2 Poles, 10 Equatorial (Zig-Zag)
-                    const R = 4;    // Radius
-                    const H = 4.5;  // Height of Poles
-                    const d = 0.5;  // Vertical offset of rings
+                    // D10: Pentagonal Trapezohedron
+                    const R = 4;
+                    const H = 4.5;
+                    const d = 0.5;
+
+                    const getVert = (type, i) => {
+                         if (type === 'top') return new THREE.Vector3(0, H, 0);
+                         if (type === 'bot') return new THREE.Vector3(0, -H, 0);
+                         if (type === 'ringA') {
+                             const angle = (i * 72) * (Math.PI / 180);
+                             return new THREE.Vector3(R * Math.cos(angle), d, R * Math.sin(angle));
+                         }
+                         if (type === 'ringB') {
+                             const angle = (i * 72 + 36) * (Math.PI / 180);
+                             return new THREE.Vector3(R * Math.cos(angle), -d, R * Math.sin(angle));
+                         }
+                    };
 
                     const vertices = [];
-                    // 0: Top Pole
-                    vertices.push(0, H, 0);
-                    // 1: Bottom Pole
-                    vertices.push(0, -H, 0);
-
-                    // Ring A (Upper Zig) - Indices 2-6
+                    // 5 Upper Faces
                     for(let i=0; i<5; i++) {
-                        const angle = (i * 72) * (Math.PI / 180);
-                        vertices.push(R * Math.cos(angle), d, R * Math.sin(angle));
+                         const vTop = getVert('top', 0);
+                         const vRa_curr = getVert('ringA', i);
+                         const vRb = getVert('ringB', i);
+                         const vRa_next = getVert('ringA', (i+1)%5);
+
+                         // Triangle 1
+                         vertices.push(vTop.x, vTop.y, vTop.z);
+                         vertices.push(vRa_curr.x, vRa_curr.y, vRa_curr.z);
+                         vertices.push(vRb.x, vRb.y, vRb.z);
+
+                         // Triangle 2
+                         vertices.push(vTop.x, vTop.y, vTop.z);
+                         vertices.push(vRb.x, vRb.y, vRb.z);
+                         vertices.push(vRa_next.x, vRa_next.y, vRa_next.z);
                     }
 
-                    // Ring B (Lower Zag) - Indices 7-11
-                    // Offset by 36 degrees
+                    // 5 Lower Faces
                     for(let i=0; i<5; i++) {
-                        const angle = (i * 72 + 36) * (Math.PI / 180);
-                        vertices.push(R * Math.cos(angle), -d, R * Math.sin(angle));
-                    }
+                         const vBot = getVert('bot', 0);
+                         const vRb_curr = getVert('ringB', i);
+                         const vRa_next = getVert('ringA', (i+1)%5);
+                         const vRb_next = getVert('ringB', (i+1)%5);
 
-                    // Faces (Triangulated Kites)
-                    // A Kite face connects: Pole -> RingA_i -> RingB_i -> RingA_next (for top)
-                    // Actually standard Trapezohedron connectivity:
-                    // Top faces connect Top to zigzag between A and B?
-                    // Let's use simpler Kite Logic visually consistent with D10.
-                    // Top Kites: Top(0), RingA(2+i), RingB(7+i), RingA(2+(i+1)%5) -- No, Ring B is "between"
-                    // Connectivity: Top -> RingA_i -> RingB_i -> RingA_(i+1) ??
-                    // Let's build Kites from: Top, A_i, B_i, A_next? No.
+                         // Triangle 1
+                         vertices.push(vBot.x, vBot.y, vBot.z);
+                         vertices.push(vRa_next.x, vRa_next.y, vRa_next.z);
+                         vertices.push(vRb_curr.x, vRb_curr.y, vRb_curr.z);
 
-                    // Correct Connectivity for Trapezohedron:
-                    // Upper Kites: Top(0), RingA_i, RingB_i, RingA_(prev/next)?
-                    // Let's try: Upper Kite i connects Top, RingA[i], RingB[i], RingA[(i+1)%5]? No.
-                    // The "Kite" uses one point from Top, one from Bottom? No.
-
-                    // Manual Face Construction for 10 Kites:
-                    // 5 Upper Kites: Top(0), RingA[i], RingB[i], RingA[(i-1+5)%5]?
-                    // Let's trace edges of a standard D10.
-                    // Top connects to all 5 Ring A vertices.
-                    // Bottom connects to all 5 Ring B vertices.
-                    // ZigZag connects Ring A to Ring B.
-                    // Faces are Kites: Top -> Ring A_i -> Ring B_i -> Ring A_(i+1)? No, that's a triangle fan.
-
-                    // Faces are: (Top, RingA_i, RingB_i, RingA_i+1)? No.
-                    // The Kite is: Top, RingA_i, RingB_i, RingA_i ??? No.
-
-                    // Let's use the explicit indices that form the solid.
-                    // Upper Face i: Top(0), RingA[i], RingB[i], RingA[(i+1)%5] -> This is 2 triangles.
-                    // Wait, Ring B is shifted.
-                    // Face i: Top(0), RingA[i], RingB[i], RingA[i+1] ???
-                    // Let's assume Upper Faces meet at Top.
-                    // A face is bounded by (Top, RingA_i), (RingA_i, RingB_i), (RingB_i, RingA_next), (RingA_next, Top).
-                    // This creates a Quad: 0, 2+i, 7+i, 2+(i+1)%5.
-
-                    const indices = [];
-                    // 5 Upper Kites (split into 2 triangles each)
-                    for(let i=0; i<5; i++) {
-                        const top = 0;
-                        const ra_curr = 2 + i;
-                        const rb = 7 + i;
-                        const ra_next = 2 + ((i + 1) % 5);
-
-                        // Triangle 1
-                        indices.push(top, ra_curr, rb);
-                        // Triangle 2
-                        indices.push(top, rb, ra_next);
-                    }
-
-                    // 5 Lower Kites
-                    // Bounded by Bottom(1), RingB_i, RingA_(next), RingB_(next)
-                    for(let i=0; i<5; i++) {
-                        const bot = 1;
-                        const rb_curr = 7 + i;
-                        const ra_next = 2 + ((i + 1) % 5); // Connects to the 'valley' in upper ring
-                        const rb_next = 7 + ((i + 1) % 5);
-
-                        // Triangle 1
-                        indices.push(bot, ra_next, rb_curr);
-                        // Triangle 2
-                        indices.push(bot, rb_next, ra_next);
+                         // Triangle 2
+                         vertices.push(vBot.x, vBot.y, vBot.z);
+                         vertices.push(vRb_next.x, vRb_next.y, vRb_next.z);
+                         vertices.push(vRa_next.x, vRa_next.y, vRa_next.z);
                     }
 
                     geometry = new THREE.BufferGeometry();
                     geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-                    geometry.setIndex(indices);
                     geometry.computeVertexNormals();
 
-                    // Physics (ConvexPolyhedron)
-                    const pts = [];
-                    for(let i=0; i<vertices.length; i+=3) {
-                        pts.push(new CANNON.Vec3(vertices[i], vertices[i+1], vertices[i+2]));
+                    // Physics Shape (ConvexPolyhedron)
+                    const uniqueVerts = [];
+                    uniqueVerts.push(new CANNON.Vec3(0, H, 0)); // 0
+                    uniqueVerts.push(new CANNON.Vec3(0, -H, 0)); // 1
+                    for(let i=0; i<5; i++) { // 2-6
+                        const v = getVert('ringA', i);
+                        uniqueVerts.push(new CANNON.Vec3(v.x, v.y, v.z));
                     }
-                    const faces = [];
-                    for(let i=0; i<indices.length; i+=3) {
-                        faces.push([indices[i], indices[i+1], indices[i+2]]);
+                    for(let i=0; i<5; i++) { // 7-11
+                        const v = getVert('ringB', i);
+                        uniqueVerts.push(new CANNON.Vec3(v.x, v.y, v.z));
                     }
-                    shape = new CANNON.ConvexPolyhedron(pts, faces);
+
+                    const cannonFaces = [];
+
+                    // Upper Faces
+                    for(let i=0; i<5; i++) {
+                        const top = 0;
+                        const ra = 2 + i;
+                        const rb = 7 + i;
+                        const ra_next = 2 + ((i + 1) % 5);
+                        cannonFaces.push([top, ra, rb]);
+                        cannonFaces.push([top, rb, ra_next]);
+                    }
+
+                    // Lower Faces
+                    for(let i=0; i<5; i++) {
+                        const bot = 1;
+                        const rb = 7 + i;
+                        const ra_next = 2 + ((i + 1) % 5);
+                        const rb_next = 7 + ((i + 1) % 5);
+                        cannonFaces.push([bot, ra_next, rb]);
+                        cannonFaces.push([bot, rb_next, ra_next]);
+                    }
+
+                    shape = new CANNON.ConvexPolyhedron(uniqueVerts, cannonFaces);
 
                     this.diceMesh = new THREE.Mesh(geometry, mat);
 
-                    // Manually add stickers for D10 to ensure perfect placement on Kites
-                    this.faceData = [];
-                    this.diceMesh.children.forEach(c => this.diceMesh.remove(c)); // Clear old
-
-                    // Helper to add sticker
-                    const addSticker = (vIndices, val, isUpper) => {
-                        // Calculate center of the Quad (average of 4 points)
-                        const center = new THREE.Vector3();
-                        vIndices.forEach(idx => {
-                            center.add(new THREE.Vector3(vertices[idx*3], vertices[idx*3+1], vertices[idx*3+2]));
-                        });
-                        center.divideScalar(4);
-
-                        // Calculate Normal (Top/Bottom -> Center)
-                        // This assumes the die is convex and 0,0,0 is inside.
-                        const normal = center.clone().normalize();
-
-                        this.faceData.push({ n: normal.clone(), v: val });
-
-                        const stickerTex = this.createStickerTexture(val);
-                        const stickerMat = new THREE.MeshBasicMaterial({
-                            map: stickerTex, transparent: true,
-                            polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
-                            depthWrite: false
-                        });
-
-                        const sSize = 2.0;
-                        const stickerGeo = new THREE.PlaneGeometry(sSize, sSize);
-                        const sticker = new THREE.Mesh(stickerGeo, stickerMat);
-
-                        sticker.position.copy(center).add(normal.clone().multiplyScalar(0.05));
-
-                        // Orientation
-                        const target = new THREE.Vector3(0, 0, 1);
-                        const quat = new THREE.Quaternion();
-                        quat.setFromUnitVectors(target, normal);
-                        sticker.setRotationFromQuaternion(quat);
-
-                        // Rotate to point upright (Towards Pole)
-                        // Pole is (0, H, 0) or (0, -H, 0)
-                        const poleY = isUpper ? H : -H;
-                        const pole = new THREE.Vector3(0, poleY, 0);
-                        const upVec = pole.sub(center).normalize();
-
-                        const localUp = upVec.clone().applyQuaternion(quat.clone().invert());
-                        const angle = Math.atan2(localUp.x, localUp.y);
-                        sticker.rotateZ(-angle);
-
-                        this.diceMesh.add(sticker);
-                    };
-
-                    // Add Stickers for 5 Upper Faces
-                    for(let i=0; i<5; i++) {
-                        const top = 0;
-                        const ra_curr = 2 + i;
-                        const rb = 7 + i;
-                        const ra_next = 2 + ((i + 1) % 5);
-                        // Standard D10 numbering is complex, we use 1..10 sequential for simplicity
-                        // Upper faces usually odd? Let's just do 1-5 top, 6-10 bottom
-                        addSticker([top, ra_curr, rb, ra_next], i+1, true);
-                    }
-                     // Add Stickers for 5 Lower Faces
-                    for(let i=0; i<5; i++) {
-                        const bot = 1;
-                        const rb_curr = 7 + i;
-                        const ra_next = 2 + ((i + 1) % 5);
-                        const rb_next = 7 + ((i + 1) % 5);
-                        addSticker([bot, ra_next, rb_curr, rb_next], i+6, false);
-                    }
+                    // Nutze die generische Sticker-Funktion (jetzt verbessert)
+                    this.addFaceStickers(geometry, sides);
 
                 } else {
                     // Andere Komplexe Geometrien (D8, D12, D20)
@@ -677,23 +604,18 @@
                 // Entferne alte Sticker, falls vorhanden
                 this.diceMesh.children.forEach(c => this.diceMesh.remove(c));
 
-                // Bei BufferGeometry ohne Index (oder manuell indiziert) holen wir die Faces
-                // Wir müssen unterscheiden, ob indiziert oder nicht.
-                // Unsere D10 ist indiziert, die anderen Standard-Geos sind toNonIndexed().
-
                 let rawFaces = [];
 
                 if (geometry.index) {
-                    // Indizierte Geometrie (unser D10)
+                    // Indizierte Geometrie
                     const pos = geometry.attributes.position;
                     const idx = geometry.index;
                     for(let i=0; i<idx.count; i+=3) {
                         const a = new THREE.Vector3().fromBufferAttribute(pos, idx.getX(i));
                         const b = new THREE.Vector3().fromBufferAttribute(pos, idx.getX(i+1));
                         const c = new THREE.Vector3().fromBufferAttribute(pos, idx.getX(i+2));
-                        const center = new THREE.Vector3().add(a).add(b).add(c).divideScalar(3);
                         const normal = new THREE.Vector3().crossVectors(new THREE.Vector3().subVectors(b, a), new THREE.Vector3().subVectors(c, a)).normalize();
-                        rawFaces.push({ c: center, n: normal, vA: a, vB: b, vC: c });
+                        rawFaces.push({ verts: [a,b,c], n: normal });
                     }
                 } else {
                     // Nicht-indizierte Geometrie
@@ -702,32 +624,56 @@
                         const a = new THREE.Vector3().fromBufferAttribute(pos, i);
                         const b = new THREE.Vector3().fromBufferAttribute(pos, i+1);
                         const c = new THREE.Vector3().fromBufferAttribute(pos, i+2);
-                        const center = new THREE.Vector3().add(a).add(b).add(c).divideScalar(3);
                         const normal = new THREE.Vector3().crossVectors(new THREE.Vector3().subVectors(b, a), new THREE.Vector3().subVectors(c, a)).normalize();
-                        rawFaces.push({ c: center, n: normal, vA: a, vB: b, vC: c });
+                        rawFaces.push({ verts: [a,b,c], n: normal });
                     }
                 }
 
-                // Filtere eindeutige Flächen
-                const uniqueFaces = [];
+                // Gruppiere nach Normale (Wichtig für D12/Pentagone)
+                const faceGroups = [];
+                const THRESHOLD = 0.1;
+
                 rawFaces.forEach(raw => {
-                    let found = false;
-                    for(let u of uniqueFaces) {
-                        if (u.n.distanceTo(raw.n) < 0.15) {
-                            if (sides !== 8 || u.c.distanceTo(raw.c) < 0.15) {
-                                found = true;
-                                break;
-                            }
+                    let match = null;
+                    for (let group of faceGroups) {
+                        if (group.n.distanceTo(raw.n) < THRESHOLD) {
+                            match = group;
+                            break;
                         }
                     }
-                    if (!found && uniqueFaces.length < sides) uniqueFaces.push(raw);
+
+                    if (match) {
+                        match.verts.push(...raw.verts);
+                    } else {
+                        faceGroups.push({ n: raw.n, verts: [...raw.verts] });
+                    }
                 });
+
+                // Begrenze auf erwartete Seitenanzahl
+                if (faceGroups.length > sides) {
+                    // Einfache Heuristik: Nimm die größten Flächen oder einfach die ersten
+                    faceGroups.splice(sides);
+                }
 
                 this.faceData = [];
 
-                uniqueFaces.forEach((face, index) => {
+                faceGroups.forEach((group, index) => {
+                    // Berechne Zentrum (Centroid) aller Vertices der Gruppe
+                    const uniqueVerts = [];
+                    group.verts.forEach(v => {
+                        let present = false;
+                        for(let uv of uniqueVerts) {
+                             if(uv.distanceTo(v) < 0.01) { present = true; break; }
+                        }
+                        if(!present) uniqueVerts.push(v);
+                    });
+
+                    const center = new THREE.Vector3();
+                    uniqueVerts.forEach(v => center.add(v));
+                    center.divideScalar(uniqueVerts.length);
+
                     const val = index + 1;
-                    this.faceData.push({ n: face.n.clone(), v: val });
+                    this.faceData.push({ n: group.n.clone(), v: val });
 
                     const stickerTex = this.createStickerTexture(val);
                     const stickerMat = new THREE.MeshBasicMaterial({
@@ -739,37 +685,39 @@
                         depthWrite: false
                     });
 
-                    const sideVector = face.vB.clone().sub(face.vA);
-                    let sSize = sideVector.length() * 0.8;
+                    // Berechne Größe basierend auf maximalem Abstand zum Zentrum
+                    let maxDist = 0;
+                    uniqueVerts.forEach(v => {
+                        const d = v.distanceTo(center);
+                        if(d > maxDist) maxDist = d;
+                    });
 
-                    if (sides === 12) sSize = sideVector.length() * 1.5;
-                    else if (sides === 20) sSize = sideVector.length() * 1;
+                    let sSize = maxDist * 1.5;
+
+                    if (sides === 10) sSize = maxDist * 1.6;
+                    if (sides === 12) sSize = maxDist * 1.6;
+                    if (sides === 20) sSize = maxDist * 1.3;
 
                     const stickerGeo = new THREE.PlaneGeometry(sSize, sSize);
                     const sticker = new THREE.Mesh(stickerGeo, stickerMat);
 
-                    // 1. Positionieren
                     const liftAmount = 0.05;
-                    sticker.position.copy(face.c).add(face.n.clone().multiplyScalar(liftAmount));
+                    sticker.position.copy(center).add(group.n.clone().multiplyScalar(liftAmount));
 
-                    // 2. Ausrichtung der Normalen
                     const target = new THREE.Vector3(0, 0, 1);
                     const quat = new THREE.Quaternion();
-                    quat.setFromUnitVectors(target, face.n.clone());
+                    quat.setFromUnitVectors(target, group.n.clone());
                     sticker.setRotationFromQuaternion(quat);
 
-                    // 3. Korrektur-Rotation
-                    // Für D10 ist es besser, wenn die Spitzen zur Y-Achse (Spitze des Würfels) zeigen.
+                    // Ausrichtung nach oben
                     let upVector;
                     if (sides === 10) {
-                         // Die Spitze des D10 liegt bei Y=+/-height.
-                         // Wir wollen, dass der "Oben"-Vektor der Zahl zur Spitze zeigt.
-                         // Wenn y > 0 (Obere Hälfte), ist Spitze bei (0, h, 0).
-                         // Wenn y < 0 (Untere Hälfte), ist Spitze bei (0, -h, 0).
-                         const apexY = (face.c.y > 0) ? 2.5 : -2.5; // height ist 2.5
-                         upVector = new THREE.Vector3(0, apexY, 0).sub(face.c).normalize();
+                         // D10: Zeige zur Spitze (Apex)
+                         const apexY = (center.y > 0) ? 4.5 : -4.5;
+                         upVector = new THREE.Vector3(0, apexY, 0).sub(center).normalize();
                     } else {
-                        upVector = face.vA.clone().sub(face.c).normalize();
+                         // Andere: Zeige zum ersten Vertex
+                         upVector = uniqueVerts[0].clone().sub(center).normalize();
                     }
 
                     const localUpVector = upVector.clone().applyQuaternion(quat.clone().invert());
