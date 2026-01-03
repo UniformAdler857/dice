@@ -1,0 +1,19 @@
+{
+  "name": "dice-generator",
+  "version": "1.0.0",
+  "description": "3D Statistics Dice Generator",
+  "main": "index.html",
+  "scripts": {
+    "start": "npx serve ."
+  },
+  "keywords": [
+    "dice",
+    "3d",
+    "statistics"
+  ],
+  "author": "",
+  "license": "ISC",
+  "devDependencies": {
+    "serve": "^14.2.4"
+  }
+}
