@@ -1,0 +1,1033 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>3D Statistik-Würfelgenerator</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- Three.js (Grafik) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <!-- Cannon.js (Physik) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/cannon.js/0.6.2/cannon.min.js"></script>
+
+    <!-- Chart.js (Statistik) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #1a202c; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        #canvas-container { width: 100%; height: 60vh; position: relative; background: radial-gradient(circle, #2d3748 0%, #1a202c 100%); cursor: grab; }
+        #canvas-container:active { cursor: grabbing; }
+        #ui-layer { position: absolute; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; }
+        .interactive { pointer-events: auto; }
+
+        /* Scrollbar styling */
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: #2d3748; }
+        ::-webkit-scrollbar-thumb { background: #4a5568; border-radius: 4px; }
+    </style>
+</head>
+<body class="text-white h-screen flex flex-col md:flex-row">
+
+    <!-- LINKE SPALTE: UI -->
+    <div class="w-full md:w-1/4 bg-gray-800 p-4 overflow-y-auto z-10 shadow-xl border-r border-gray-700 flex flex-col gap-4">
+        <h1 class="text-2xl font-bold text-blue-400 mb-2">🎲 Statistik Labor</h1>
+
+        <!-- Würfelart -->
+        <div class="bg-gray-700 p-3 rounded-lg">
+            <label class="block text-sm font-medium text-gray-300 mb-1">Würfelart</label>
+            <select id="diceType" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-blue-500 transition">
+                <option value="6" selected>D6 (Kubus)</option>
+                <option value="8">D8 (Oktaeder)</option>
+                <option value="10">D10 (Pentagonal)</option>
+                <option value="12">D12 (Dodekaeder)</option>
+                <option value="20">D20 (Ikosaeder)</option>
+            </select>
+        </div>
+
+        <!-- Gezinkte Würfel Option (NEU) -->
+        <div class="bg-red-900 bg-opacity-30 p-3 rounded-lg border border-red-800">
+            <label for="loadFactor" class="block text-sm font-medium text-red-300 mb-2">
+                Gezinkter Würfel (Simulation)
+            </label>
+            <input type="range" id="loadFactor" min="0" max="90" value="0" step="10" class="w-full h-2 bg-gray-600 rounded-lg appearance-none cursor-pointer range-lg focus:outline-none focus:ring-2 focus:ring-red-500 transition">
+            <div class="flex justify-between text-xs mt-1 text-red-400">
+                <span>Fair (0%)</span>
+                <span>+<span id="loadFactorValue">0</span>% auf Max-Zahl</span>
+            </div>
+            <p class="text-xs text-red-400 mt-2">
+                Wirkung nur bei Simulationen (> 1 Wurf). Erhöht die Chance auf die höchste Zahl.
+            </p>
+        </div>
+
+
+        <!-- Anzahl Würfe (Drop-down für schnelle Simulationen) -->
+        <div class="bg-gray-700 p-3 rounded-lg">
+            <label class="block text-sm font-medium text-gray-300 mb-1">Anzahl der Würfe</label>
+            <select id="rollCount" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-blue-500 transition">
+                <option value="1" selected>1 Wurf (3D Physik)</option>
+                <option value="10">10 Würfe (Simulation)</option>
+                <option value="100">100 Würfe (Simulation)</option>
+                <option value="1000">1.000 Würfe (Simulation)</option>
+                <option value="10000">10.000 Würfe (Simulation)</option>
+            </select>
+            <p class="text-xs text-gray-400 mt-1" id="rollInfo">Ein Wurf verwendet die 3D-Physik.</p>
+        </div>
+
+        <!-- Würfelfarbe -->
+        <div class="bg-gray-700 p-3 rounded-lg">
+            <label class="block text-sm font-medium text-gray-300 mb-1">Würfelfarbe</label>
+            <div class="flex gap-2">
+                <input type="color" id="diceColor" value="#ff6b35" class="w-12 h-10 rounded cursor-pointer border border-gray-600">
+                <input type="text" id="diceColorHex" value="ff6b35" class="flex-1 bg-gray-900 border border-gray-600 rounded p-2 text-white text-xs font-mono">
+            </div>
+        </div>
+
+        <!-- Buttons -->
+        <div class="grid grid-cols-2 gap-2">
+            <!-- 'app.roll()' Methode wird beim Klicken aufgerufen -->
+            <button id="btnRoll" onclick="app.roll()" class="col-span-2 bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 px-4 rounded shadow-lg transform transition active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed">
+                WÜRFELN
+            </button>
+            <!-- 'app.fullReset()' Methode wird beim Klicken aufgerufen -->
+            <button onclick="app.fullReset()" class="bg-red-900 hover:bg-red-800 text-xs py-2 px-2 rounded text-gray-300">
+                Alles Reset
+            </button>
+        </div>
+
+        <!-- Ergebnis -->
+        <div class="bg-gray-900 p-4 rounded-lg text-center border border-blue-900">
+            <span class="text-gray-400 text-xs uppercase tracking-wide">Letzter Wurf</span>
+            <div id="currentResult" class="text-5xl font-mono text-yellow-400 font-bold mt-2">-</div>
+            <div id="statusText" class="text-xs text-gray-500 mt-1">Physik bereit</div>
+        </div>
+
+        <!-- Info -->
+        <div class="bg-gray-700 p-3 rounded-lg text-xs space-y-2">
+            <h3 class="font-bold text-gray-300 border-b border-gray-600 pb-1">Statistik </h3>
+            <p>Seiten: <span id="sideCountDisplay">6</span></p>
+            <p class="text-blue-300 font-mono text-lg">≈ <span id="probDisplay">16.67</span>%</p>
+        </div>
+
+        <div class="bg-blue-900 bg-opacity-30 p-3 rounded-lg text-xs text-blue-200 border border-blue-800">
+            💡 <strong>Anti-Cheat:</strong> Der Würfel dreht sich beim Anheben!
+        </div>
+    </div>
+
+    <!-- RECHTE SEITE: 3D & Charts -->
+    <div class="flex-1 flex flex-col h-screen overflow-hidden relative">
+        <div id="canvas-container" class="flex-1 relative">
+            <div id="loading" class="absolute inset-0 flex flex-col items-center justify-center text-blue-400 font-mono pointer-events-none p-4 text-center bg-gray-900 z-50">
+                <span class="text-xl">Initialisiere Physik...</span>
+            </div>
+        </div>
+
+        <div class="h-1/3 bg-gray-900 border-t border-gray-700 p-4 flex gap-4 overflow-x-auto">
+            <div class="w-1/3 min-w-[250px] overflow-y-auto bg-gray-800 rounded p-2">
+                <table class="w-full text-sm text-left text-gray-300">
+                    <thead class="text-xs text-gray-400 uppercase bg-gray-700 sticky top-0">
+                        <tr>
+                            <th class="px-2 py-1">Zahl</th>
+                            <th class="px-2 py-1">Anzahl</th>
+                            <th class="px-2 py-1 text-right">%</th>
+                        </tr>
+                    </thead>
+                    <tbody id="statsTableBody"></tbody>
+                </table>
+            </div>
+
+            <div class="flex-1 min-w-[300px] bg-gray-800 rounded p-2 relative">
+                <canvas id="statsChart"></canvas>
+            </div>
+
+            <div class="w-48 bg-gray-800 rounded p-3 flex flex-col justify-center gap-2 text-sm">
+                <div>
+                    <span class="text-gray-400">Würfe gesamt:</span>
+                    <div id="totalRolls" class="text-xl font-bold text-white">0</div>
+                </div>
+                <div>
+                    <span class="text-gray-400">Durchschnitt:</span>
+                    <div id="averageRoll" class="text-xl font-bold text-blue-400">-</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        class DiceApp {
+            constructor() {
+                this.scene = null;
+                this.camera = null;
+                this.renderer = null;
+                this.world = null;
+                this.diceBody = null;
+                this.diceMesh = null;
+
+                this.raycaster = null; // THREE.Raycaster
+                this.mouse = null;      // THREE.Vector2
+                this.isDragging = false;
+                this.dragPlane = null;
+                this.jointBody = null;
+                this.mouseConstraint = null;
+
+                this.isRolling = false;
+                this.faceData = []; // Speichert Vektoren der Würfelflächen und deren Werte
+                this.timeoutId = null;
+
+                this.stats = { sides: 6, history: [], counts: {}, total: 0 };
+                this.loadFactor = 0; // Neu: Gezinkter Faktor (0-90)
+                this.chart = null;
+                this.diceColor = 0xff6b35; // Orange als Standard
+
+                console.log("App startet...");
+                this.init3D();
+                this.initPhysics();
+                this.initInteraction();
+                this.initChart();
+                this.updateUI();
+
+                // Initialen Würfel erstellen (D6)
+                this.createDice(6);
+
+                document.getElementById('loading').style.display = 'none';
+                this.animate();
+            }
+
+            init3D() {
+                const container = document.getElementById('canvas-container');
+                this.scene = new THREE.Scene();
+                this.scene.fog = new THREE.FogExp2(0x2d3748, 0.02);
+
+                this.camera = new THREE.PerspectiveCamera(40, container.clientWidth / container.clientHeight, 0.1, 100);
+                this.camera.position.set(0, 35, 10);
+                this.camera.lookAt(0, 0, 0);
+
+                this.renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+                this.renderer.setSize(container.clientWidth, container.clientHeight);
+                this.renderer.shadowMap.enabled = true;
+                container.appendChild(this.renderer.domElement);
+
+                const ambient = new THREE.AmbientLight(0xffffff, 0.5);
+                this.scene.add(ambient);
+                const light = new THREE.DirectionalLight(0xffffff, 0.8);
+                light.position.set(10, 40, 10);
+                light.castShadow = true;
+                light.shadow.mapSize.width = 2048;
+                light.shadow.mapSize.height = 2048;
+                light.shadow.camera.left = -20; light.shadow.camera.right = 20;
+                light.shadow.camera.top = 20; light.shadow.camera.bottom = -20;
+                this.scene.add(light);
+
+                const grid = new THREE.GridHelper(50, 50, 0x4a5568, 0x2d3748);
+                this.scene.add(grid);
+                const pGeo = new THREE.PlaneGeometry(100, 100);
+                const pMat = new THREE.ShadowMaterial({ opacity: 0.3 });
+                const pMesh = new THREE.Mesh(pGeo, pMat);
+                pMesh.rotation.x = -Math.PI / 2;
+                pMesh.receiveShadow = true;
+                this.scene.add(pMesh);
+
+                window.addEventListener('resize', () => {
+                    this.camera.aspect = container.clientWidth / container.clientHeight;
+                    this.camera.updateProjectionMatrix();
+                    this.renderer.setSize(container.clientWidth, container.clientHeight);
+                });
+
+                // Event Listener für Würfelart
+                document.getElementById('diceType').addEventListener('change', (e) => {
+                    this.fullReset();
+                    this.createDice(parseInt(e.target.value));
+                });
+
+                // Event Listener für Würfelanzahl
+                document.getElementById('rollCount').addEventListener('change', (e) => {
+                    const count = parseInt(e.target.value);
+                    document.getElementById('rollInfo').innerText =
+                        count === 1 ? 'Ein Wurf verwendet die 3D-Physik.' : 'Mehrere Würfe werden simuliert.';
+                });
+
+                // NEU: Event Listener für Load Factor (gezinkter Würfel)
+                const loadFactorInput = document.getElementById('loadFactor');
+                const loadFactorValueDisplay = document.getElementById('loadFactorValue');
+                loadFactorInput.addEventListener('input', (e) => {
+                    this.loadFactor = parseInt(e.target.value);
+                    loadFactorValueDisplay.innerText = this.loadFactor;
+                    this.fullReset(); // Statistik zurücksetzen, wenn der Faktor geändert wird
+                });
+
+                // Color picker event listeners
+                document.getElementById('diceColor').addEventListener('input', (e) => {
+                    this.diceColor = parseInt(e.target.value.replace('#', ''), 16);
+                    document.getElementById('diceColorHex').value = e.target.value.replace('#', '').toLowerCase();
+                    this.createDice(this.stats.sides);
+                });
+
+                document.getElementById('diceColorHex').addEventListener('input', (e) => {
+                    const hex = e.target.value.replace('#', '');
+                    if (/^[0-9a-fA-F]{6}$/.test(hex)) {
+                        this.diceColor = parseInt(hex, 16);
+                        document.getElementById('diceColor').value = '#' + hex;
+                        this.createDice(this.stats.sides);
+                    }
+                });
+            }
+
+            initPhysics() {
+                if (typeof CANNON === 'undefined') throw new Error("Cannon.js fehlt");
+
+                this.raycaster = new THREE.Raycaster();
+                this.mouse = new THREE.Vector2();
+
+                this.world = new CANNON.World();
+                this.world.gravity.set(0, -30, 0);
+                this.world.broadphase = new CANNON.NaiveBroadphase();
+                this.world.solver.iterations = 20;
+
+                const mat1 = new CANNON.Material(); // Für Würfel
+                const mat2 = new CANNON.Material(); // Für Boden/Wände
+                const contact = new CANNON.ContactMaterial(mat1, mat2, { friction: 0.1, restitution: 0.3 });
+                this.world.addContactMaterial(contact);
+
+                const floor = new CANNON.Body({ mass: 0, shape: new CANNON.Plane(), material: mat2 });
+                floor.quaternion.setFromAxisAngle(new CANNON.Vec3(1, 0, 0), -Math.PI / 2);
+                this.world.addBody(floor);
+
+                // Käfig (Extra Dicke Wände gegen Tunneling)
+                const wallThick = 5;
+                const h = 20;
+                const dist = 12;
+
+                const wallShapeLR = new CANNON.Box(new CANNON.Vec3(wallThick, h, dist));
+                const wallShapeFB = new CANNON.Box(new CANNON.Vec3(dist, h, wallThick));
+                const ceilShape = new CANNON.Box(new CANNON.Vec3(dist, wallThick, dist));
+
+                const createWall = (pos, shape) => {
+                    const b = new CANNON.Body({ mass: 0, shape: shape, material: mat2 });
+                    b.position.copy(pos);
+                    this.world.addBody(b);
+                };
+
+                createWall(new CANNON.Vec3(-dist-wallThick, h/2, 0), wallShapeLR); // Links
+                createWall(new CANNON.Vec3(dist+wallThick, h/2, 0), wallShapeLR);  // Rechts
+                createWall(new CANNON.Vec3(0, h/2, -dist-wallThick), wallShapeFB); // Hinten
+                createWall(new CANNON.Vec3(0, h/2, dist+wallThick), wallShapeFB);  // Vorne
+                createWall(new CANNON.Vec3(0, 18, 0), ceilShape);                  // Decke
+
+                this.jointBody = new CANNON.Body({ mass: 0 });
+                this.jointBody.addShape(new CANNON.Sphere(0.1));
+                this.jointBody.collisionFilterGroup = 0;
+                this.jointBody.collisionFilterMask = 0;
+                this.world.addBody(this.jointBody);
+            }
+
+            initInteraction() {
+                const c = document.getElementById('canvas-container');
+                const pg = new THREE.PlaneGeometry(100, 100);
+                this.dragPlane = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ visible: false }));
+                this.dragPlane.rotation.x = -Math.PI / 2;
+                // ERHÖHT: Setze die Ebene auf 6 (genug um nicht am Boden zu schleifen, aber nicht zu hoch)
+                this.dragPlane.position.y = 6;
+                this.scene.add(this.dragPlane);
+
+                const getPos = (e) => {
+                    const rect = c.getBoundingClientRect();
+                    const clientX = e.clientX || (e.touches ? e.touches[0].clientX : 0);
+                    const clientY = e.clientY || (e.touches ? e.touches[0].clientY : 0);
+                    return {
+                        x: ((clientX - rect.left) / c.clientWidth) * 2 - 1,
+                        y: -((clientY - rect.top) / c.clientHeight) * 2 + 1
+                    };
+                };
+
+                const startDrag = (pos) => {
+                    // Draggen nur erlauben, wenn 1 Wurf ausgewählt ist (Physik-Wurf)
+                    if(parseInt(document.getElementById('rollCount').value) !== 1) return;
+
+                    if(!this.diceMesh) return;
+                    this.mouse.set(pos.x, pos.y);
+                    this.raycaster.setFromCamera(this.mouse, this.camera);
+                    const hits = this.raycaster.intersectObject(this.diceMesh);
+
+                    if (hits.length > 0) {
+                        this.isDragging = true;
+                        c.style.cursor = "grabbing";
+                        const p = hits[0].point;
+                        // Setze das Joint Body auf die Trefferposition
+                        this.jointBody.position.set(p.x, p.y, p.z);
+                        // Erstelle eine PointToPointConstraint zwischen dem Würfel und dem Joint Body
+                        // CHANGE: Verbinde mit dem Zentrum (0,0,0) statt dem Klickpunkt,
+                        // damit sich der Würfel um seine eigene Achse dreht und nicht um den Klickpunkt schwingt.
+                        this.mouseConstraint = new CANNON.PointToPointConstraint(this.diceBody, new CANNON.Vec3(0,0,0), this.jointBody, new CANNON.Vec3(0,0,0));
+                        this.world.addConstraint(this.mouseConstraint);
+                        this.diceBody.wakeUp(); // Würfel aufwecken, damit er sich bewegen kann
+                    }
+                };
+
+                const moveDrag = (pos) => {
+                    if (!this.isDragging) return;
+                    this.mouse.set(pos.x, pos.y);
+                    this.raycaster.setFromCamera(this.mouse, this.camera);
+                    // Treffe die Drag-Ebene, um die 3D-Position der Maus zu bestimmen
+                    const hits = this.raycaster.intersectObject(this.dragPlane);
+                    if (hits.length > 0) {
+                        const p = hits[0].point;
+                        const lim = 10;
+                        // Begrenze die Bewegung, um ein Entkommen aus dem Käfig zu verhindern
+                        this.jointBody.position.set(
+                            Math.max(-lim, Math.min(lim, p.x)),
+                            Math.max(1, Math.min(10, p.y)),
+                            Math.max(-lim, Math.min(lim, p.z))
+                        );
+                    }
+                };
+
+                const endDrag = () => {
+                    if (this.isDragging) {
+                        this.isDragging = false;
+                        c.style.cursor = "grab";
+                        // Löse die Verbindung und starte die Ergebnisprüfung
+                        this.world.removeConstraint(this.mouseConstraint);
+                        this.mouseConstraint = null;
+                        this.startRollCheck();
+                    }
+                };
+
+                c.addEventListener('mousedown', (e) => startDrag(getPos(e)));
+                c.addEventListener('mousemove', (e) => moveDrag(getPos(e)));
+                window.addEventListener('mouseup', endDrag);
+
+                c.addEventListener('touchstart', (e) => { e.preventDefault(); startDrag(getPos(e)); });
+                c.addEventListener('touchmove', (e) => { e.preventDefault(); moveDrag(getPos(e)); });
+                window.addEventListener('touchend', endDrag);
+            }
+
+            // --- Textur Generator ---
+            // Vereinfacht, um nur die Zahl zu zeichnen
+            createStickerTexture(text) {
+                const cvs = document.createElement('canvas');
+                cvs.width = 512; cvs.height = 512;
+                const ctx = cvs.getContext('2d');
+                const w = 512; const h = 512;
+
+                // Hintergrund transparent
+                ctx.clearRect(0, 0, w, h);
+
+                // Text Stil
+                ctx.fillStyle = 'white';
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'middle';
+
+                // Text Platzierung
+                ctx.font = 'bold 250px Arial';
+                ctx.fillText(text, w/2, h/2);
+
+                // Unterstreichung für 6 und 9
+                if (text == 6 || text == 9) {
+                    ctx.font = 'bold 250px Arial'; // Gleicher Font für korrekte Metrik
+                    ctx.fillText('_', w/2, h/2 + 110); // Leicht versetzt nach unten
+                }
+
+                return new THREE.CanvasTexture(cvs);
+            }
+
+            createDice(sides) {
+                if (this.diceMesh) this.scene.remove(this.diceMesh);
+                if (this.diceBody) this.world.removeBody(this.diceBody);
+
+                this.stats.sides = sides;
+                this.faceData = [];
+                this.updateUI();
+
+                const size = 3.5;
+                let geometry, shape;
+
+                // Material mit Würfelfarbe
+                const mat = new THREE.MeshStandardMaterial({
+                    color: this.diceColor, flatShading: true, roughness: 0.3, metalness: 0.2
+                });
+
+                if (sides === 6) {
+                    geometry = new THREE.BoxGeometry(size, size, size);
+                    shape = new CANNON.Box(new CANNON.Vec3(size/2, size/2, size/2));
+                    // D6 Texturen direkt
+                    const materials = [1, 6, 2, 5, 3, 4].map(n => new THREE.MeshStandardMaterial({
+                        map: this.createStickerTexture(n), roughness: 0.3, color: this.diceColor, metalness: 0.2
+                    }));
+                    this.diceMesh = new THREE.Mesh(geometry, materials);
+                    this.faceData = [
+                        // Wichtig: faceData für D6 MUSS mit der Reihenfolge der BoxGeometry übereinstimmen
+                        {n: new THREE.Vector3(1,0,0), v:1}, {n: new THREE.Vector3(-1,0,0), v:6}, // X+ und X-
+                        {n: new THREE.Vector3(0,1,0), v:2}, {n: new THREE.Vector3(0,-1,0), v:5}, // Y+ und Y-
+                        {n: new THREE.Vector3(0,0,1), v:3}, {n: new THREE.Vector3(0,0,-1), v:4}  // Z+ und Z-
+                    ];
+                } else if (sides === 10) {
+                    // D10: Pentagonal Trapezohedron (Kite Form) - "Echter" D10
+                    // Vertices: 2 Poles, 10 Equatorial (Zig-Zag)
+                    const R = 4;    // Radius
+                    const H = 4.5;  // Height of Poles
+                    const d = 0.5;  // Vertical offset of rings
+
+                    const vertices = [];
+                    // 0: Top Pole
+                    vertices.push(0, H, 0);
+                    // 1: Bottom Pole
+                    vertices.push(0, -H, 0);
+
+                    // Ring A (Upper Zig) - Indices 2-6
+                    for(let i=0; i<5; i++) {
+                        const angle = (i * 72) * (Math.PI / 180);
+                        vertices.push(R * Math.cos(angle), d, R * Math.sin(angle));
+                    }
+
+                    // Ring B (Lower Zag) - Indices 7-11
+                    // Offset by 36 degrees
+                    for(let i=0; i<5; i++) {
+                        const angle = (i * 72 + 36) * (Math.PI / 180);
+                        vertices.push(R * Math.cos(angle), -d, R * Math.sin(angle));
+                    }
+
+                    // Faces (Triangulated Kites)
+                    // A Kite face connects: Pole -> RingA_i -> RingB_i -> RingA_next (for top)
+                    // Actually standard Trapezohedron connectivity:
+                    // Top faces connect Top to zigzag between A and B?
+                    // Let's use simpler Kite Logic visually consistent with D10.
+                    // Top Kites: Top(0), RingA(2+i), RingB(7+i), RingA(2+(i+1)%5) -- No, Ring B is "between"
+                    // Connectivity: Top -> RingA_i -> RingB_i -> RingA_(i+1) ??
+                    // Let's build Kites from: Top, A_i, B_i, A_next? No.
+
+                    // Correct Connectivity for Trapezohedron:
+                    // Upper Kites: Top(0), RingA_i, RingB_i, RingA_(prev/next)?
+                    // Let's try: Upper Kite i connects Top, RingA[i], RingB[i], RingA[(i+1)%5]? No.
+                    // The "Kite" uses one point from Top, one from Bottom? No.
+
+                    // Manual Face Construction for 10 Kites:
+                    // 5 Upper Kites: Top(0), RingA[i], RingB[i], RingA[(i-1+5)%5]?
+                    // Let's trace edges of a standard D10.
+                    // Top connects to all 5 Ring A vertices.
+                    // Bottom connects to all 5 Ring B vertices.
+                    // ZigZag connects Ring A to Ring B.
+                    // Faces are Kites: Top -> Ring A_i -> Ring B_i -> Ring A_(i+1)? No, that's a triangle fan.
+
+                    // Faces are: (Top, RingA_i, RingB_i, RingA_i+1)? No.
+                    // The Kite is: Top, RingA_i, RingB_i, RingA_i ??? No.
+
+                    // Let's use the explicit indices that form the solid.
+                    // Upper Face i: Top(0), RingA[i], RingB[i], RingA[(i+1)%5] -> This is 2 triangles.
+                    // Wait, Ring B is shifted.
+                    // Face i: Top(0), RingA[i], RingB[i], RingA[i+1] ???
+                    // Let's assume Upper Faces meet at Top.
+                    // A face is bounded by (Top, RingA_i), (RingA_i, RingB_i), (RingB_i, RingA_next), (RingA_next, Top).
+                    // This creates a Quad: 0, 2+i, 7+i, 2+(i+1)%5.
+
+                    const indices = [];
+                    // 5 Upper Kites (split into 2 triangles each)
+                    for(let i=0; i<5; i++) {
+                        const top = 0;
+                        const ra_curr = 2 + i;
+                        const rb = 7 + i;
+                        const ra_next = 2 + ((i + 1) % 5);
+
+                        // Triangle 1
+                        indices.push(top, ra_curr, rb);
+                        // Triangle 2
+                        indices.push(top, rb, ra_next);
+                    }
+
+                    // 5 Lower Kites
+                    // Bounded by Bottom(1), RingB_i, RingA_(next), RingB_(next)
+                    for(let i=0; i<5; i++) {
+                        const bot = 1;
+                        const rb_curr = 7 + i;
+                        const ra_next = 2 + ((i + 1) % 5); // Connects to the 'valley' in upper ring
+                        const rb_next = 7 + ((i + 1) % 5);
+
+                        // Triangle 1
+                        indices.push(bot, ra_next, rb_curr);
+                        // Triangle 2
+                        indices.push(bot, rb_next, ra_next);
+                    }
+
+                    geometry = new THREE.BufferGeometry();
+                    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+                    geometry.setIndex(indices);
+                    geometry.computeVertexNormals();
+
+                    // Physics (ConvexPolyhedron)
+                    const pts = [];
+                    for(let i=0; i<vertices.length; i+=3) {
+                        pts.push(new CANNON.Vec3(vertices[i], vertices[i+1], vertices[i+2]));
+                    }
+                    const faces = [];
+                    for(let i=0; i<indices.length; i+=3) {
+                        faces.push([indices[i], indices[i+1], indices[i+2]]);
+                    }
+                    shape = new CANNON.ConvexPolyhedron(pts, faces);
+
+                    this.diceMesh = new THREE.Mesh(geometry, mat);
+
+                    // Manually add stickers for D10 to ensure perfect placement on Kites
+                    this.faceData = [];
+                    this.diceMesh.children.forEach(c => this.diceMesh.remove(c)); // Clear old
+
+                    // Helper to add sticker
+                    const addSticker = (vIndices, val, isUpper) => {
+                        // Calculate center of the Quad (average of 4 points)
+                        const center = new THREE.Vector3();
+                        vIndices.forEach(idx => {
+                            center.add(new THREE.Vector3(vertices[idx*3], vertices[idx*3+1], vertices[idx*3+2]));
+                        });
+                        center.divideScalar(4);
+
+                        // Calculate Normal (Top/Bottom -> Center)
+                        // This assumes the die is convex and 0,0,0 is inside.
+                        const normal = center.clone().normalize();
+
+                        this.faceData.push({ n: normal.clone(), v: val });
+
+                        const stickerTex = this.createStickerTexture(val);
+                        const stickerMat = new THREE.MeshBasicMaterial({
+                            map: stickerTex, transparent: true,
+                            polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+                            depthWrite: false
+                        });
+
+                        const sSize = 2.0;
+                        const stickerGeo = new THREE.PlaneGeometry(sSize, sSize);
+                        const sticker = new THREE.Mesh(stickerGeo, stickerMat);
+
+                        sticker.position.copy(center).add(normal.clone().multiplyScalar(0.05));
+
+                        // Orientation
+                        const target = new THREE.Vector3(0, 0, 1);
+                        const quat = new THREE.Quaternion();
+                        quat.setFromUnitVectors(target, normal);
+                        sticker.setRotationFromQuaternion(quat);
+
+                        // Rotate to point upright (Towards Pole)
+                        // Pole is (0, H, 0) or (0, -H, 0)
+                        const poleY = isUpper ? H : -H;
+                        const pole = new THREE.Vector3(0, poleY, 0);
+                        const upVec = pole.sub(center).normalize();
+
+                        const localUp = upVec.clone().applyQuaternion(quat.clone().invert());
+                        const angle = Math.atan2(localUp.x, localUp.y);
+                        sticker.rotateZ(-angle);
+
+                        this.diceMesh.add(sticker);
+                    };
+
+                    // Add Stickers for 5 Upper Faces
+                    for(let i=0; i<5; i++) {
+                        const top = 0;
+                        const ra_curr = 2 + i;
+                        const rb = 7 + i;
+                        const ra_next = 2 + ((i + 1) % 5);
+                        // Standard D10 numbering is complex, we use 1..10 sequential for simplicity
+                        // Upper faces usually odd? Let's just do 1-5 top, 6-10 bottom
+                        addSticker([top, ra_curr, rb, ra_next], i+1, true);
+                    }
+                     // Add Stickers for 5 Lower Faces
+                    for(let i=0; i<5; i++) {
+                        const bot = 1;
+                        const rb_curr = 7 + i;
+                        const ra_next = 2 + ((i + 1) % 5);
+                        const rb_next = 7 + ((i + 1) % 5);
+                        addSticker([bot, ra_next, rb_curr, rb_next], i+6, false);
+                    }
+
+                } else {
+                    // Andere Komplexe Geometrien (D8, D12, D20)
+                    if(sides === 8) geometry = new THREE.OctahedronGeometry(size);
+                    else if(sides === 12) geometry = new THREE.DodecahedronGeometry(size);
+                    else if(sides === 20) geometry = new THREE.IcosahedronGeometry(size);
+
+                    geometry = geometry.toNonIndexed();
+                    geometry.computeVertexNormals();
+
+                    // Physik Form
+                    const pos = geometry.attributes.position;
+                    const pts = [];
+                    const faces = [];
+                    for(let i=0; i<pos.count; i++) pts.push(new CANNON.Vec3(pos.getX(i), pos.getY(i), pos.getZ(i)));
+                    try {
+                        for(let i=0; i<pos.count; i+=3) faces.push([i, i+1, i+2]);
+                        shape = new CANNON.ConvexPolyhedron(pts, faces);
+                    } catch(e) {
+                        console.warn("Fallback Shape: Sphäre");
+                        shape = new CANNON.Sphere(size * 0.8);
+                    }
+
+                    this.diceMesh = new THREE.Mesh(geometry, mat);
+                    this.addFaceStickers(geometry, sides);
+                }
+
+                this.diceMesh.castShadow = true;
+                this.scene.add(this.diceMesh);
+
+                const startY = 5;
+                this.diceBody = new CANNON.Body({ mass: 10, shape: shape, position: new CANNON.Vec3(0, startY, 0) });
+                this.diceBody.linearDamping = 0.1;
+                this.diceBody.angularDamping = 0.1;
+                this.world.addBody(this.diceBody);
+            }
+
+            addFaceStickers(geometry, sides) {
+                // Entferne alte Sticker, falls vorhanden
+                this.diceMesh.children.forEach(c => this.diceMesh.remove(c));
+
+                // Bei BufferGeometry ohne Index (oder manuell indiziert) holen wir die Faces
+                // Wir müssen unterscheiden, ob indiziert oder nicht.
+                // Unsere D10 ist indiziert, die anderen Standard-Geos sind toNonIndexed().
+
+                let rawFaces = [];
+
+                if (geometry.index) {
+                    // Indizierte Geometrie (unser D10)
+                    const pos = geometry.attributes.position;
+                    const idx = geometry.index;
+                    for(let i=0; i<idx.count; i+=3) {
+                        const a = new THREE.Vector3().fromBufferAttribute(pos, idx.getX(i));
+                        const b = new THREE.Vector3().fromBufferAttribute(pos, idx.getX(i+1));
+                        const c = new THREE.Vector3().fromBufferAttribute(pos, idx.getX(i+2));
+                        const center = new THREE.Vector3().add(a).add(b).add(c).divideScalar(3);
+                        const normal = new THREE.Vector3().crossVectors(new THREE.Vector3().subVectors(b, a), new THREE.Vector3().subVectors(c, a)).normalize();
+                        rawFaces.push({ c: center, n: normal, vA: a, vB: b, vC: c });
+                    }
+                } else {
+                    // Nicht-indizierte Geometrie
+                    const pos = geometry.attributes.position;
+                    for(let i=0; i<pos.count; i+=3) {
+                        const a = new THREE.Vector3().fromBufferAttribute(pos, i);
+                        const b = new THREE.Vector3().fromBufferAttribute(pos, i+1);
+                        const c = new THREE.Vector3().fromBufferAttribute(pos, i+2);
+                        const center = new THREE.Vector3().add(a).add(b).add(c).divideScalar(3);
+                        const normal = new THREE.Vector3().crossVectors(new THREE.Vector3().subVectors(b, a), new THREE.Vector3().subVectors(c, a)).normalize();
+                        rawFaces.push({ c: center, n: normal, vA: a, vB: b, vC: c });
+                    }
+                }
+
+                // Filtere eindeutige Flächen
+                const uniqueFaces = [];
+                rawFaces.forEach(raw => {
+                    let found = false;
+                    for(let u of uniqueFaces) {
+                        if (u.n.distanceTo(raw.n) < 0.15) {
+                            if (sides !== 8 || u.c.distanceTo(raw.c) < 0.15) {
+                                found = true;
+                                break;
+                            }
+                        }
+                    }
+                    if (!found && uniqueFaces.length < sides) uniqueFaces.push(raw);
+                });
+
+                this.faceData = [];
+
+                uniqueFaces.forEach((face, index) => {
+                    const val = index + 1;
+                    this.faceData.push({ n: face.n.clone(), v: val });
+
+                    const stickerTex = this.createStickerTexture(val);
+                    const stickerMat = new THREE.MeshBasicMaterial({
+                        map: stickerTex,
+                        transparent: true,
+                        polygonOffset: true,
+                        polygonOffsetFactor: -3,
+                        polygonOffsetUnits: -3,
+                        depthWrite: false
+                    });
+
+                    const sideVector = face.vB.clone().sub(face.vA);
+                    let sSize = sideVector.length() * 0.8;
+
+                    if (sides === 12) sSize = sideVector.length() * 1.5;
+                    else if (sides === 20) sSize = sideVector.length() * 1;
+
+                    const stickerGeo = new THREE.PlaneGeometry(sSize, sSize);
+                    const sticker = new THREE.Mesh(stickerGeo, stickerMat);
+
+                    // 1. Positionieren
+                    const liftAmount = 0.05;
+                    sticker.position.copy(face.c).add(face.n.clone().multiplyScalar(liftAmount));
+
+                    // 2. Ausrichtung der Normalen
+                    const target = new THREE.Vector3(0, 0, 1);
+                    const quat = new THREE.Quaternion();
+                    quat.setFromUnitVectors(target, face.n.clone());
+                    sticker.setRotationFromQuaternion(quat);
+
+                    // 3. Korrektur-Rotation
+                    // Für D10 ist es besser, wenn die Spitzen zur Y-Achse (Spitze des Würfels) zeigen.
+                    let upVector;
+                    if (sides === 10) {
+                         // Die Spitze des D10 liegt bei Y=+/-height.
+                         // Wir wollen, dass der "Oben"-Vektor der Zahl zur Spitze zeigt.
+                         // Wenn y > 0 (Obere Hälfte), ist Spitze bei (0, h, 0).
+                         // Wenn y < 0 (Untere Hälfte), ist Spitze bei (0, -h, 0).
+                         const apexY = (face.c.y > 0) ? 2.5 : -2.5; // height ist 2.5
+                         upVector = new THREE.Vector3(0, apexY, 0).sub(face.c).normalize();
+                    } else {
+                        upVector = face.vA.clone().sub(face.c).normalize();
+                    }
+
+                    const localUpVector = upVector.clone().applyQuaternion(quat.clone().invert());
+                    const rotationAngle = Math.atan2(localUpVector.x, localUpVector.y);
+                    sticker.rotateZ(-rotationAngle);
+
+                    this.diceMesh.add(sticker);
+                });
+            }
+
+            roll() {
+                if (this.isRolling) return;
+
+                // Holen Sie die Anzahl der Würfe
+                const count = parseInt(document.getElementById('rollCount').value);
+
+                if (count > 1) {
+                    // Führt schnelle Simulation ohne Physik durch
+                    this.simulateMultiple(count);
+                    return;
+                }
+
+                // Startet den 3D-Physik-Wurf (nur wenn count === 1)
+                if(this.loadFactor > 0) {
+                    console.warn("WARNUNG: Gezinkte Einstellung ignoriert für 3D-Physik-Wurf.");
+                }
+
+                this.startRollCheck();
+
+                // Würfel in die Luft setzen und zurücksetzen
+                // Position etwas höher
+                const startY = 5;
+                this.diceBody.position.set(0, startY, 0);
+                this.diceBody.velocity.set(0,0,0);
+                this.diceBody.angularVelocity.set(0,0,0);
+
+                const f = 25; // Impulskraft
+                this.diceBody.applyImpulse(
+                    new CANNON.Vec3((Math.random()-0.5)*f, f, (Math.random()-0.5)*f),
+                    new CANNON.Vec3(0,0,0) // Wirkt im Zentrum
+                );
+                // Zusätzlicher Drehimpuls
+                this.diceBody.angularVelocity.set(Math.random()*20, Math.random()*20, Math.random()*20);
+                this.diceBody.wakeUp();
+            }
+
+            startRollCheck() {
+                this.isRolling = true;
+                document.getElementById('btnRoll').disabled = true;
+                document.getElementById('statusText').innerText = "Rollt...";
+
+                // Stopp-Timer, falls der Würfel hängen bleibt
+                if(this.timeoutId) clearTimeout(this.timeoutId);
+                this.timeoutId = setTimeout(() => {
+                    if(this.isRolling) this.checkResult(true);
+                }, 4000); // Max. 4 Sekunden warten
+            }
+
+            checkResult(force = false) {
+                if (this.isDragging && !force) return;
+
+                const v = this.diceBody.velocity.length();
+                // Prüfen, ob der Würfel zur Ruhe gekommen ist
+                if ((v < 0.1 && this.diceBody.angularVelocity.length() < 0.1) || force) {
+
+                    const diceQuat = new THREE.Quaternion().copy(this.diceBody.quaternion);
+
+                    let bestVal = 1;
+                    let maxDot = -Infinity;
+
+                    // Zielrichtung: Immer (0, 1, 0)
+                    const targetDir = new THREE.Vector3(0, 1, 0);
+
+                    this.faceData.forEach(fd => {
+                        // Normale der Fläche in Weltkoordinaten umwandeln
+                        const worldN = fd.n.clone().applyQuaternion(diceQuat);
+                        const dot = worldN.dot(targetDir); // Dot-Produkt mit Zielrichtung
+
+                        if (dot > maxDot) { maxDot = dot; bestVal = fd.v; }
+                    });
+
+                    this.isRolling = false;
+                    document.getElementById('btnRoll').disabled = false;
+                    document.getElementById('statusText').innerText = "Fertig";
+                    this.processResult(bestVal);
+
+                    if(this.timeoutId) clearTimeout(this.timeoutId);
+                }
+            }
+
+            processResult(res) {
+                document.getElementById('currentResult').innerText = res;
+                this.recordStat(res);
+                this.updateStatsUI();
+            }
+
+            animate() {
+                requestAnimationFrame(() => this.animate());
+                const timeStep = 1/60;
+                this.world.step(timeStep); // Physik simulieren
+
+                if (this.diceMesh && this.diceBody) {
+                    // Mesh mit Physics Body synchronisieren
+                    this.diceMesh.position.copy(this.diceBody.position);
+                    this.diceMesh.quaternion.copy(this.diceBody.quaternion);
+                }
+
+                // Cheat Protection: Rotation beim Draggen (nur wenn 1 Wurf ausgewählt ist)
+                if(this.isDragging) {
+                    this.diceBody.angularVelocity.set(
+                        Math.sin(Date.now() * 0.01) * 10,
+                        Math.cos(Date.now() * 0.01) * 10,
+                        Math.sin(Date.now() * 0.01) * 10
+                    );
+                }
+
+                // Sicherheits-Check: Würfel zurücksetzen, wenn er aus dem Bild fliegt
+                if(this.diceBody.position.y < -20 || this.diceBody.position.y > 50 || Math.abs(this.diceBody.position.x) > 40 || Math.abs(this.diceBody.position.z) > 40) {
+                    this.diceBody.position.set(0, 5, 0);
+                    this.diceBody.velocity.set(0,0,0);
+                    this.diceBody.angularVelocity.set(0,0,0);
+                }
+
+                if(this.isRolling) this.checkResult();
+                this.renderer.render(this.scene, this.camera);
+            }
+
+            // NEUE FUNKTION: Simuliert mehrere Würfe schnell
+            simulateMultiple(count) {
+                document.getElementById('btnRoll').disabled = true;
+                document.getElementById('statusText').innerText = `Simuliere ${ (count >= 1000) ? (count / 1000) + 'K' : count } Würfe...`;
+
+                let last = 0;
+                // Deaktiviert die Sichtbarkeit des Würfels während der Simulation
+                if(this.diceMesh) this.diceMesh.visible = false;
+
+                const sides = this.stats.sides;
+                const maxVal = sides; // Die Zahl, die bevorzugt wird (höchste Zahl)
+                const loadFactor = this.loadFactor / 100; // Umrechnung in 0.0 bis 0.9
+
+                // Erstelle eine gewichtete Liste möglicher Ergebnisse
+                const outcomes = [];
+                // Fülle alle Zahlen (1 bis sides) einmal auf
+                for (let i = 1; i <= sides; i++) {
+                    outcomes.push(i);
+                }
+
+                // Füge die Max-Zahl basierend auf dem Load Factor hinzu
+                if (loadFactor > 0) {
+                    // Berechne das zusätzliche Gewicht
+                    const simpleExtraWeight = Math.round(sides * loadFactor * 10);
+
+                    for(let i=0; i < simpleExtraWeight; i++) {
+                        outcomes.push(maxVal);
+                    }
+                    console.log(`Gezinkter Würfel: ${ (this.loadFactor) }% auf ${ (maxVal) }. Extra Gewicht: ${ (simpleExtraWeight) }`);
+                }
+                // Die Summe der Gewichte ist jetzt outcomes.length
+
+                // Führt die Simulation in einem Timeout durch, um die UI nicht zu blockieren
+                setTimeout(() => {
+                    for(let i=0; i<count; i++) {
+                        // Wähle zufällig aus der gewichteten Liste
+                        const randomIndex = Math.floor(Math.random() * outcomes.length);
+                        last = outcomes[randomIndex];
+                        this.recordStat(last);
+                    }
+
+                    document.getElementById('currentResult').innerText = last;
+                    this.updateStatsUI();
+
+                    if(this.diceMesh) this.diceMesh.visible = true;
+
+                    document.getElementById('btnRoll').disabled = false;
+                    document.getElementById('statusText').innerText = "Simulation beendet";
+                }, 10); // Kurzes Timeout, um "Rollt..." anzuzeigen
+            }
+
+            resetStats() {
+                // Setzt die Statistik zurück
+                this.stats.history = []; this.stats.counts = {}; this.stats.total = 0;
+                for(let i=1; i<=this.stats.sides; i++) this.stats.counts[i] = 0;
+                document.getElementById('currentResult').innerText = "-";
+                this.updateStatsUI(); this.updateUI();
+            }
+
+            fullReset() {
+                // Setzt Statistik und Würfelposition zurück
+                this.resetStats();
+                document.getElementById('statusText').innerText = "Reset";
+                if(this.diceBody) {
+                    const startY = 5;
+                    this.diceBody.position.set(0, startY, 0);
+                    this.diceBody.velocity.set(0,0,0);
+                    this.diceBody.angularVelocity.set(0,0,0);
+                    this.diceBody.quaternion.set(0,0,0,1);
+                    this.diceMesh.visible = true; // Stellt sicher, dass der Würfel sichtbar ist
+                }
+            }
+
+            recordStat(n) {
+                if(!this.stats.counts[n]) this.stats.counts[n] = 0;
+                this.stats.counts[n]++; this.stats.history.push(n); this.stats.total++;
+            }
+
+            updateUI() {
+                const p = (1/this.stats.sides * 100).toFixed(2);
+                document.getElementById('sideCountDisplay').innerText = this.stats.sides;
+                document.getElementById('probDisplay').innerText = p;
+                if (this.chart) {
+                    this.chart.data.labels = Array.from({length:this.stats.sides}, (_,i)=>i+1);
+                    this.chart.data.datasets[0].data = new Array(this.stats.sides).fill(0);
+                    this.chart.update();
+                }
+            }
+
+            initChart() {
+                const ctx = document.getElementById('statsChart').getContext('2d');
+                Chart.defaults.color = '#a0aec0'; Chart.defaults.borderColor = '#4a5568';
+                this.chart = new Chart(ctx, {
+                    type: 'bar',
+                    data: { labels: [], datasets: [{ label: 'N', data: [], backgroundColor: 'rgba(66, 153, 225, 0.6)', borderColor: '#4299e1', borderWidth: 1 }] },
+                    options: { responsive: true, maintainAspectRatio: false, plugins: { legend: { display: false } }, scales: { y: { beginAtZero: true, grid: { color: '#07054a' } } , x: { grid: { display: false } } } }
+                });
+            }
+
+            updateStatsUI() {
+                const tbody = document.getElementById('statsTableBody');
+                tbody.innerHTML = '';
+                const labels = []; const data = [];
+                let sum = 0;
+                for (let i = 1; i <= this.stats.sides; i++) {
+                    const c = this.stats.counts[i] || 0;
+                    labels.push(i); data.push(c);
+                    sum += i * c;
+                    const pct = this.stats.total > 0 ? ((c/this.stats.total)*100).toFixed(1) : "0.0";
+                    tbody.innerHTML += `<tr class="border-b border-gray-700"><td class="px-2 font-mono text-blue-300">${i}</td><td>${c}</td><td class="text-right text-gray-500">${pct}%</td></tr>`;
+                }
+                if(this.chart) {
+                    this.chart.data.labels = labels;
+                    this.chart.data.datasets[0].data = data;
+                    this.chart.update();
+                }
+                document.getElementById('totalRolls').innerText = this.stats.total;
+                document.getElementById('averageRoll').innerText = this.stats.total ? (sum/this.stats.total).toFixed(2) : "-";
+            }
+        }
+
+        // Mache die App global zugänglich, damit die Buttons sie aufrufen können
+        let app;
+        try {
+            app = new DiceApp();
+            // Ersetze die globale Variable durch die Instanz
+            window.app = app;
+        } catch (e) {
+            console.error("Fehler beim Starten der App:", e);
+            document.getElementById('loading').innerHTML = '<span class="text-red-500">Fehler: ' + e.message + '</span>';
+        }
+    </script>
+</body>
+</html>
