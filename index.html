@@ -299,8 +299,8 @@
                 const h = 20;
                 const dist = 12;
 
-                const wallShapeLR = new CANNON.Box(new CANNON.Vec3(wallThick, h, dist));
-                const wallShapeFB = new CANNON.Box(new CANNON.Vec3(dist, h, wallThick));
+                const wallShapeLR = new CANNON.Box(new CANNON.Vec3(wallThick, h, dist + wallThick));
+                const wallShapeFB = new CANNON.Box(new CANNON.Vec3(dist + wallThick, h, wallThick));
                 const ceilShape = new CANNON.Box(new CANNON.Vec3(dist, wallThick, dist));
 
                 const createWall = (pos, shape) => {
@@ -468,7 +468,7 @@
                 } else if (sides === 10) {
                     // D10: Pentagonal Trapezohedron
                     const R = 3;
-                    const H = 4.2;
+                    const H = 2.4;
                     const d = 0.4;
 
                     const getVert = (type, i) => {
@@ -716,7 +716,7 @@
                     let upVector;
                     if (sides === 10) {
                          // D10: Zeige zur Spitze (Apex)
-                         const apexY = (center.y > 0) ? 4.2 : -4.2;
+                         const apexY = (center.y > 0) ? 2.4 : -2.4;
                          upVector = new THREE.Vector3(0, apexY, 0).sub(center).normalize();
                     } else {
                          // Andere: Zeige zum ersten Vertex
