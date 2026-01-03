@@ -464,9 +464,9 @@
                     ];
                 } else if (sides === 10) {
                     // D10: Pentagonal Trapezohedron
-                    const R = 4;
-                    const H = 4.5;
-                    const d = 0.5;
+                    const R = 3;
+                    const H = 3.5;
+                    const d = 0.4;
 
                     const getVert = (type, i) => {
                          if (type === 'top') return new THREE.Vector3(0, H, 0);
@@ -694,7 +694,7 @@
 
                     let sSize = maxDist * 1.5;
 
-                    if (sides === 10) sSize = maxDist * 1.6;
+                    if (sides === 10) sSize = maxDist * 1.3;
                     if (sides === 12) sSize = maxDist * 1.6;
                     if (sides === 20) sSize = maxDist * 1.3;
 
@@ -713,7 +713,7 @@
                     let upVector;
                     if (sides === 10) {
                          // D10: Zeige zur Spitze (Apex)
-                         const apexY = (center.y > 0) ? 4.5 : -4.5;
+                         const apexY = (center.y > 0) ? 3.5 : -3.5;
                          upVector = new THREE.Vector3(0, apexY, 0).sub(center).normalize();
                     } else {
                          // Andere: Zeige zum ersten Vertex
