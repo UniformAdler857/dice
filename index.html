@@ -356,10 +356,13 @@
                         const p = hits[0].point;
                         // Setze das Joint Body auf die Trefferposition
                         this.jointBody.position.set(p.x, p.y, p.z);
-                        // Erstelle eine PointToPointConstraint zwischen dem Würfel und dem Joint Body
-                        // CHANGE: Verbinde mit dem Zentrum (0,0,0) statt dem Klickpunkt,
-                        // damit sich der Würfel um seine eigene Achse dreht und nicht um den Klickpunkt schwingt.
-                        this.mouseConstraint = new CANNON.PointToPointConstraint(this.diceBody, new CANNON.Vec3(0,0,0), this.jointBody, new CANNON.Vec3(0,0,0));
+
+                        // Berechne den lokalen Punkt auf dem Würfel
+                        const localPoint = new CANNON.Vec3();
+                        this.diceBody.pointToLocalFrame(new CANNON.Vec3(p.x, p.y, p.z), localPoint);
+
+                        // Erstelle eine PointToPointConstraint zwischen dem Würfel (lokaler Punkt) und dem Joint Body
+                        this.mouseConstraint = new CANNON.PointToPointConstraint(this.diceBody, localPoint, this.jointBody, new CANNON.Vec3(0,0,0));
                         this.world.addConstraint(this.mouseConstraint);
                         this.diceBody.wakeUp(); // Würfel aufwecken, damit er sich bewegen kann
                     }
@@ -425,8 +428,8 @@
 
                 // Unterstreichung für 6 und 9
                 if (text == 6 || text == 9) {
-                    ctx.font = 'bold 250px Arial'; // Gleicher Font für korrekte Metrik
-                    ctx.fillText('_', w/2, h/2 + 110); // Leicht versetzt nach unten
+                    ctx.fillStyle = 'white';
+                    ctx.fillRect(w/2 - 60, h/2 + 100, 120, 20); // Zentrierter Balken als Unterstrich
                 }
 
                 return new THREE.CanvasTexture(cvs);
@@ -465,7 +468,7 @@
                 } else if (sides === 10) {
                     // D10: Pentagonal Trapezohedron
                     const R = 3;
-                    const H = 3.5;
+                    const H = 4.2;
                     const d = 0.4;
 
                     const getVert = (type, i) => {
@@ -713,7 +716,7 @@
                     let upVector;
                     if (sides === 10) {
                          // D10: Zeige zur Spitze (Apex)
-                         const apexY = (center.y > 0) ? 3.5 : -3.5;
+                         const apexY = (center.y > 0) ? 4.2 : -4.2;
                          upVector = new THREE.Vector3(0, apexY, 0).sub(center).normalize();
                     } else {
                          // Andere: Zeige zum ersten Vertex
