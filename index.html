@@ -42,7 +42,6 @@
                 <option value="d6" selected>D6 (Kubus)</option>
                 <option value="d8">D8 (Oktaeder)</option>
                 <option value="d10">D10 (Pentagonal)</option>
-                <option value="d10_v2">D10 v2 (Neu)</option>
                 <option value="d12">D12 (Dodekaeder)</option>
                 <option value="d20">D20 (Ikosaeder)</option>
             </select>
@@ -445,7 +444,7 @@
                 let sides = 6;
                 if (type === 'd6') sides = 6;
                 else if (type === 'd8') sides = 8;
-                else if (type === 'd10' || type === 'd10_v2') sides = 10;
+                else if (type === 'd10') sides = 10;
                 else if (type === 'd12') sides = 12;
                 else if (type === 'd20') sides = 20;
 
@@ -476,59 +475,76 @@
                         {n: new THREE.Vector3(0,0,1), v:3}, {n: new THREE.Vector3(0,0,-1), v:4}  // Z+ und Z-
                     ];
                 } else if (type === 'd10') {
-                    // D10: Pentagonal Trapezohedron
-                    const R = 3;
-                    const H = 2.4;
-                    const d = 0.4;
+                    // D10: Pentagonal Trapezohedron - Korrekte Geometrie
+                    // Die Seitenflächen sind Drachenvierecke (Kites).
+                    // Damit diese Planar sind, gibt es ein festes Verhältnis zwischen Apex-Höhe (H) und Ring-Höhe (h).
+                    // Verhältnis: h = H * (1 - cos(36°)) / (1 + cos(36°)) ≈ 0.10557 * H
 
-                    const getVert = (type, i) => {
-                         if (type === 'top') return new THREE.Vector3(0, H, 0);
-                         if (type === 'bot') return new THREE.Vector3(0, -H, 0);
-                         if (type === 'ringA') {
-                             const angle = (i * 72) * (Math.PI / 180);
-                             return new THREE.Vector3(R * Math.cos(angle), d, R * Math.sin(angle));
-                         }
-                         if (type === 'ringB') {
-                             const angle = (i * 72 + 36) * (Math.PI / 180);
-                             return new THREE.Vector3(R * Math.cos(angle), -d, R * Math.sin(angle));
-                         }
-                    };
+                    const R = 3.0; // Radius der Äquator-Ringe
+                    const H = 3.5; // Höhe der Spitze (Apex)
 
-                    const vertices = [];
-                    // 5 Upper Faces
+                    // Berechne die korrekte Höhe der Ringe für planare Flächen
+                    // cos(36°) = (1 + sqrt(5)) / 4 ≈ 0.809017
+                    const cos36 = Math.cos(36 * Math.PI / 180);
+                    const h = H * (1 - cos36) / (1 + cos36);
+
+                    // Vertices generieren
+                    // 0: Top Apex (0, H, 0)
+                    // 1: Bottom Apex (0, -H, 0)
+                    // 2-6: Ring A (High) bei y = h, winkel 0, 72...
+                    // 7-11: Ring B (Low) bei y = -h, winkel 36, 108...
+
+                    const uniqueVerts = [];
+                    uniqueVerts.push(new CANNON.Vec3(0, H, 0));  // 0: Top
+                    uniqueVerts.push(new CANNON.Vec3(0, -H, 0)); // 1: Bottom
+
+                    // Ring A (y = h) - Winkel 0, 72, 144, 216, 288
                     for(let i=0; i<5; i++) {
-                         const vTop = getVert('top', 0);
-                         const vRa_curr = getVert('ringA', i);
-                         const vRb = getVert('ringB', i);
-                         const vRa_next = getVert('ringA', (i+1)%5);
-
-                         // Triangle 1
-                         vertices.push(vTop.x, vTop.y, vTop.z);
-                         vertices.push(vRa_curr.x, vRa_curr.y, vRa_curr.z);
-                         vertices.push(vRb.x, vRb.y, vRb.z);
-
-                         // Triangle 2
-                         vertices.push(vTop.x, vTop.y, vTop.z);
-                         vertices.push(vRb.x, vRb.y, vRb.z);
-                         vertices.push(vRa_next.x, vRa_next.y, vRa_next.z);
+                        const angle = (i * 72) * (Math.PI / 180);
+                        uniqueVerts.push(new CANNON.Vec3(R * Math.cos(angle), h, R * Math.sin(angle)));
                     }
 
-                    // 5 Lower Faces
+                    // Ring B (y = -h) - Winkel 36, 108, 180, 252, 324
                     for(let i=0; i<5; i++) {
-                         const vBot = getVert('bot', 0);
-                         const vRb_curr = getVert('ringB', i);
-                         const vRa_next = getVert('ringA', (i+1)%5);
-                         const vRb_next = getVert('ringB', (i+1)%5);
+                        const angle = (i * 72 + 36) * (Math.PI / 180);
+                        uniqueVerts.push(new CANNON.Vec3(R * Math.cos(angle), -h, R * Math.sin(angle)));
+                    }
 
-                         // Triangle 1
-                         vertices.push(vBot.x, vBot.y, vBot.z);
-                         vertices.push(vRa_next.x, vRa_next.y, vRa_next.z);
-                         vertices.push(vRb_curr.x, vRb_curr.y, vRb_curr.z);
+                    // Mesh Geometrie bauen
+                    const vertices = [];
 
-                         // Triangle 2
-                         vertices.push(vBot.x, vBot.y, vBot.z);
-                         vertices.push(vRb_next.x, vRb_next.y, vRb_next.z);
-                         vertices.push(vRa_next.x, vRa_next.y, vRa_next.z);
+                    // Hilfsfunktion zum Hinzufügen eines Dreiecks
+                    const addTri = (idx1, idx2, idx3) => {
+                        vertices.push(uniqueVerts[idx1].x, uniqueVerts[idx1].y, uniqueVerts[idx1].z);
+                        vertices.push(uniqueVerts[idx2].x, uniqueVerts[idx2].y, uniqueVerts[idx2].z);
+                        vertices.push(uniqueVerts[idx3].x, uniqueVerts[idx3].y, uniqueVerts[idx3].z);
+                    };
+
+                    // Wir bauen die 10 Drachenvierecke aus je 2 Dreiecken.
+                    // Durch die korrekte Höhe h sind diese Dreiecke koplanar.
+
+                    // 5 Obere Flächen: Top -> RingA[i] -> RingB[i] -> RingA[i+1]
+                    // (Top, RingA_i, RingB_i) und (Top, RingB_i, RingA_next)
+                    for(let i=0; i<5; i++) {
+                        const top = 0;
+                        const ra = 2 + i;
+                        const rb = 7 + i;
+                        const ra_next = 2 + ((i+1)%5);
+
+                        addTri(top, ra, rb);
+                        addTri(top, rb, ra_next);
+                    }
+
+                    // 5 Untere Flächen: Bottom -> RingB[i] -> RingA[next] -> RingB[next]
+                    // (Bot, RingA_next, RingB_i) und (Bot, RingB_next, RingA_next)
+                    for(let i=0; i<5; i++) {
+                        const bot = 1;
+                        const rb = 7 + i;
+                        const ra_next = 2 + ((i+1)%5);
+                        const rb_next = 7 + ((i+1)%5);
+
+                        addTri(bot, ra_next, rb);
+                        addTri(bot, rb_next, ra_next);
                     }
 
                     geometry = new THREE.BufferGeometry();
@@ -536,26 +552,20 @@
                     geometry.computeVertexNormals();
 
                     // Physics Shape (ConvexPolyhedron)
-                    const uniqueVerts = [];
-                    uniqueVerts.push(new CANNON.Vec3(0, H, 0)); // 0
-                    uniqueVerts.push(new CANNON.Vec3(0, -H, 0)); // 1
-                    for(let i=0; i<5; i++) { // 2-6
-                        const v = getVert('ringA', i);
-                        uniqueVerts.push(new CANNON.Vec3(v.x, v.y, v.z));
-                    }
-                    for(let i=0; i<5; i++) { // 7-11
-                        const v = getVert('ringB', i);
-                        uniqueVerts.push(new CANNON.Vec3(v.x, v.y, v.z));
-                    }
-
+                    // Wir nutzen dieselben unique Vertices und definieren die Flächen-Indices
                     const cannonFaces = [];
 
+                    // Die Flächen müssen gegen den Uhrzeigersinn (CCW) definiert werden (von außen gesehen)
                     // Upper Faces
                     for(let i=0; i<5; i++) {
                         const top = 0;
                         const ra = 2 + i;
                         const rb = 7 + i;
                         const ra_next = 2 + ((i + 1) % 5);
+
+                        // Ein Drachenviereck als 2 Dreiecke für Cannon?
+                        // Nein, ConvexPolyhedron kann n-gons, aber Dreiecke sind sicherer/einfacher.
+                        // Wir nehmen dieselbe Struktur wie beim Rendering.
                         cannonFaces.push([top, ra, rb]);
                         cannonFaces.push([top, rb, ra_next]);
                     }
@@ -566,114 +576,12 @@
                         const rb = 7 + i;
                         const ra_next = 2 + ((i + 1) % 5);
                         const rb_next = 7 + ((i + 1) % 5);
+
                         cannonFaces.push([bot, ra_next, rb]);
                         cannonFaces.push([bot, rb_next, ra_next]);
                     }
 
                     shape = new CANNON.ConvexPolyhedron(uniqueVerts, cannonFaces);
-
-                    this.diceMesh = new THREE.Mesh(geometry, mat);
-
-                    // Nutze die generische Sticker-Funktion (jetzt verbessert)
-                    this.addFaceStickers(geometry, sides);
-
-                } else if (type === 'd10_v2') {
-                    // D10 v2: Verbessertes Pentagonal Trapezohedron
-                    const R = 3.0; // Standard Radius
-                    const H = 3.5; // Standard Höhe
-                    const d = 0.6; // Offset für die Ring-Vertices, damit Kites entstehen
-
-                    const getVert = (type, i) => {
-                         if (type === 'top') return new THREE.Vector3(0, H, 0);
-                         if (type === 'bot') return new THREE.Vector3(0, -H, 0);
-                         if (type === 'ringA') {
-                             const angle = (i * 72) * (Math.PI / 180);
-                             return new THREE.Vector3(R * Math.cos(angle), d, R * Math.sin(angle));
-                         }
-                         if (type === 'ringB') {
-                             const angle = (i * 72 + 36) * (Math.PI / 180);
-                             return new THREE.Vector3(R * Math.cos(angle), -d, R * Math.sin(angle));
-                         }
-                    };
-
-                    const vertices = [];
-                    // 5 Upper Faces
-                    for(let i=0; i<5; i++) {
-                         const vTop = getVert('top', 0);
-                         const vRa_curr = getVert('ringA', i);
-                         const vRb = getVert('ringB', i);
-                         const vRa_next = getVert('ringA', (i+1)%5);
-
-                         // Triangle 1
-                         vertices.push(vTop.x, vTop.y, vTop.z);
-                         vertices.push(vRa_curr.x, vRa_curr.y, vRa_curr.z);
-                         vertices.push(vRb.x, vRb.y, vRb.z);
-
-                         // Triangle 2
-                         vertices.push(vTop.x, vTop.y, vTop.z);
-                         vertices.push(vRb.x, vRb.y, vRb.z);
-                         vertices.push(vRa_next.x, vRa_next.y, vRa_next.z);
-                    }
-
-                    // 5 Lower Faces
-                    for(let i=0; i<5; i++) {
-                         const vBot = getVert('bot', 0);
-                         const vRb_curr = getVert('ringB', i);
-                         const vRa_next = getVert('ringA', (i+1)%5);
-                         const vRb_next = getVert('ringB', (i+1)%5);
-
-                         // Triangle 1
-                         vertices.push(vBot.x, vBot.y, vBot.z);
-                         vertices.push(vRa_next.x, vRa_next.y, vRa_next.z);
-                         vertices.push(vRb_curr.x, vRb_curr.y, vRb_curr.z);
-
-                         // Triangle 2
-                         vertices.push(vBot.x, vBot.y, vBot.z);
-                         vertices.push(vRb_next.x, vRb_next.y, vRb_next.z);
-                         vertices.push(vRa_next.x, vRa_next.y, vRa_next.z);
-                    }
-
-                    geometry = new THREE.BufferGeometry();
-                    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
-                    geometry.computeVertexNormals();
-
-                    // Physics Shape (ConvexPolyhedron)
-                    const uniqueVerts = [];
-                    uniqueVerts.push(new CANNON.Vec3(0, H, 0)); // 0
-                    uniqueVerts.push(new CANNON.Vec3(0, -H, 0)); // 1
-                    for(let i=0; i<5; i++) { // 2-6
-                        const v = getVert('ringA', i);
-                        uniqueVerts.push(new CANNON.Vec3(v.x, v.y, v.z));
-                    }
-                    for(let i=0; i<5; i++) { // 7-11
-                        const v = getVert('ringB', i);
-                        uniqueVerts.push(new CANNON.Vec3(v.x, v.y, v.z));
-                    }
-
-                    const cannonFaces = [];
-
-                    // Upper Faces
-                    for(let i=0; i<5; i++) {
-                        const top = 0;
-                        const ra = 2 + i;
-                        const rb = 7 + i;
-                        const ra_next = 2 + ((i + 1) % 5);
-                        cannonFaces.push([top, ra, rb]);
-                        cannonFaces.push([top, rb, ra_next]);
-                    }
-
-                    // Lower Faces
-                    for(let i=0; i<5; i++) {
-                        const bot = 1;
-                        const rb = 7 + i;
-                        const ra_next = 2 + ((i + 1) % 5);
-                        const rb_next = 7 + ((i + 1) % 5);
-                        cannonFaces.push([bot, ra_next, rb]);
-                        cannonFaces.push([bot, rb_next, ra_next]);
-                    }
-
-                    shape = new CANNON.ConvexPolyhedron(uniqueVerts, cannonFaces);
-
                     this.diceMesh = new THREE.Mesh(geometry, mat);
                     this.addFaceStickers(geometry, sides);
 
@@ -824,10 +732,11 @@
 
                     // Ausrichtung nach oben
                     let upVector;
-                    if (this.diceType === 'd10' || this.diceType === 'd10_v2') {
+                    if (this.diceType === 'd10') {
                          // D10: Zeige zur Spitze (Apex)
-                         let apexH = 2.4;
-                         if (this.diceType === 'd10_v2') apexH = 3.5;
+                         // Die Geometrie wird neu generiert mit H=3.5, also nutzen wir das hardcoded oder dynamisch
+                         // Da wir jetzt Standardgrößen verwenden, ist apexH = 3.5 korrekt (wie im alten d10_v2)
+                         let apexH = 3.5;
 
                          const apexY = (center.y > 0) ? apexH : -apexH;
                          upVector = new THREE.Vector3(0, apexY, 0).sub(center).normalize();
