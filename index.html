@@ -39,11 +39,12 @@
         <div class="bg-gray-700 p-3 rounded-lg">
             <label class="block text-sm font-medium text-gray-300 mb-1">Würfelart</label>
             <select id="diceType" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-blue-500 transition">
-                <option value="6" selected>D6 (Kubus)</option>
-                <option value="8">D8 (Oktaeder)</option>
-                <option value="10">D10 (Pentagonal)</option>
-                <option value="12">D12 (Dodekaeder)</option>
-                <option value="20">D20 (Ikosaeder)</option>
+                <option value="d6" selected>D6 (Kubus)</option>
+                <option value="d8">D8 (Oktaeder)</option>
+                <option value="d10">D10 (Pentagonal)</option>
+                <option value="d10_v2">D10 v2 (Neu)</option>
+                <option value="d12">D12 (Dodekaeder)</option>
+                <option value="d20">D20 (Ikosaeder)</option>
             </select>
         </div>
 
@@ -180,6 +181,7 @@
                 this.loadFactor = 0; // Neu: Gezinkter Faktor (0-90)
                 this.chart = null;
                 this.diceColor = 0xff6b35; // Orange als Standard
+                this.diceType = 'd6';
 
                 console.log("App startet...");
                 this.init3D();
@@ -189,7 +191,7 @@
                 this.updateUI();
 
                 // Initialen Würfel erstellen (D6)
-                this.createDice(6);
+                this.createDice('d6');
 
                 document.getElementById('loading').style.display = 'none';
                 this.animate();
@@ -238,7 +240,7 @@
                 // Event Listener für Würfelart
                 document.getElementById('diceType').addEventListener('change', (e) => {
                     this.fullReset();
-                    this.createDice(parseInt(e.target.value));
+                    this.createDice(e.target.value);
                 });
 
                 // Event Listener für Würfelanzahl
@@ -261,7 +263,7 @@
                 document.getElementById('diceColor').addEventListener('input', (e) => {
                     this.diceColor = parseInt(e.target.value.replace('#', ''), 16);
                     document.getElementById('diceColorHex').value = e.target.value.replace('#', '').toLowerCase();
-                    this.createDice(this.stats.sides);
+                    this.createDice(this.diceType);
                 });
 
                 document.getElementById('diceColorHex').addEventListener('input', (e) => {
@@ -269,7 +271,7 @@
                     if (/^[0-9a-fA-F]{6}$/.test(hex)) {
                         this.diceColor = parseInt(hex, 16);
                         document.getElementById('diceColor').value = '#' + hex;
-                        this.createDice(this.stats.sides);
+                        this.createDice(this.diceType);
                     }
                 });
             }
@@ -435,9 +437,17 @@
                 return new THREE.CanvasTexture(cvs);
             }
 
-            createDice(sides) {
+            createDice(type) {
                 if (this.diceMesh) this.scene.remove(this.diceMesh);
                 if (this.diceBody) this.world.removeBody(this.diceBody);
+
+                this.diceType = type;
+                let sides = 6;
+                if (type === 'd6') sides = 6;
+                else if (type === 'd8') sides = 8;
+                else if (type === 'd10' || type === 'd10_v2') sides = 10;
+                else if (type === 'd12') sides = 12;
+                else if (type === 'd20') sides = 20;
 
                 this.stats.sides = sides;
                 this.faceData = [];
@@ -451,7 +461,7 @@
                     color: this.diceColor, flatShading: true, roughness: 0.3, metalness: 0.2
                 });
 
-                if (sides === 6) {
+                if (type === 'd6') {
                     geometry = new THREE.BoxGeometry(size, size, size);
                     shape = new CANNON.Box(new CANNON.Vec3(size/2, size/2, size/2));
                     // D6 Texturen direkt
@@ -465,7 +475,7 @@
                         {n: new THREE.Vector3(0,1,0), v:2}, {n: new THREE.Vector3(0,-1,0), v:5}, // Y+ und Y-
                         {n: new THREE.Vector3(0,0,1), v:3}, {n: new THREE.Vector3(0,0,-1), v:4}  // Z+ und Z-
                     ];
-                } else if (sides === 10) {
+                } else if (type === 'd10') {
                     // D10: Pentagonal Trapezohedron
                     const R = 3;
                     const H = 2.4;
@@ -565,6 +575,106 @@
                     this.diceMesh = new THREE.Mesh(geometry, mat);
 
                     // Nutze die generische Sticker-Funktion (jetzt verbessert)
+                    this.addFaceStickers(geometry, sides);
+
+                } else if (type === 'd10_v2') {
+                    // D10 v2: Verbessertes Pentagonal Trapezohedron
+                    const R = 3.0; // Standard Radius
+                    const H = 3.5; // Standard Höhe
+                    const d = 0.6; // Offset für die Ring-Vertices, damit Kites entstehen
+
+                    const getVert = (type, i) => {
+                         if (type === 'top') return new THREE.Vector3(0, H, 0);
+                         if (type === 'bot') return new THREE.Vector3(0, -H, 0);
+                         if (type === 'ringA') {
+                             const angle = (i * 72) * (Math.PI / 180);
+                             return new THREE.Vector3(R * Math.cos(angle), d, R * Math.sin(angle));
+                         }
+                         if (type === 'ringB') {
+                             const angle = (i * 72 + 36) * (Math.PI / 180);
+                             return new THREE.Vector3(R * Math.cos(angle), -d, R * Math.sin(angle));
+                         }
+                    };
+
+                    const vertices = [];
+                    // 5 Upper Faces
+                    for(let i=0; i<5; i++) {
+                         const vTop = getVert('top', 0);
+                         const vRa_curr = getVert('ringA', i);
+                         const vRb = getVert('ringB', i);
+                         const vRa_next = getVert('ringA', (i+1)%5);
+
+                         // Triangle 1
+                         vertices.push(vTop.x, vTop.y, vTop.z);
+                         vertices.push(vRa_curr.x, vRa_curr.y, vRa_curr.z);
+                         vertices.push(vRb.x, vRb.y, vRb.z);
+
+                         // Triangle 2
+                         vertices.push(vTop.x, vTop.y, vTop.z);
+                         vertices.push(vRb.x, vRb.y, vRb.z);
+                         vertices.push(vRa_next.x, vRa_next.y, vRa_next.z);
+                    }
+
+                    // 5 Lower Faces
+                    for(let i=0; i<5; i++) {
+                         const vBot = getVert('bot', 0);
+                         const vRb_curr = getVert('ringB', i);
+                         const vRa_next = getVert('ringA', (i+1)%5);
+                         const vRb_next = getVert('ringB', (i+1)%5);
+
+                         // Triangle 1
+                         vertices.push(vBot.x, vBot.y, vBot.z);
+                         vertices.push(vRa_next.x, vRa_next.y, vRa_next.z);
+                         vertices.push(vRb_curr.x, vRb_curr.y, vRb_curr.z);
+
+                         // Triangle 2
+                         vertices.push(vBot.x, vBot.y, vBot.z);
+                         vertices.push(vRb_next.x, vRb_next.y, vRb_next.z);
+                         vertices.push(vRa_next.x, vRa_next.y, vRa_next.z);
+                    }
+
+                    geometry = new THREE.BufferGeometry();
+                    geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+                    geometry.computeVertexNormals();
+
+                    // Physics Shape (ConvexPolyhedron)
+                    const uniqueVerts = [];
+                    uniqueVerts.push(new CANNON.Vec3(0, H, 0)); // 0
+                    uniqueVerts.push(new CANNON.Vec3(0, -H, 0)); // 1
+                    for(let i=0; i<5; i++) { // 2-6
+                        const v = getVert('ringA', i);
+                        uniqueVerts.push(new CANNON.Vec3(v.x, v.y, v.z));
+                    }
+                    for(let i=0; i<5; i++) { // 7-11
+                        const v = getVert('ringB', i);
+                        uniqueVerts.push(new CANNON.Vec3(v.x, v.y, v.z));
+                    }
+
+                    const cannonFaces = [];
+
+                    // Upper Faces
+                    for(let i=0; i<5; i++) {
+                        const top = 0;
+                        const ra = 2 + i;
+                        const rb = 7 + i;
+                        const ra_next = 2 + ((i + 1) % 5);
+                        cannonFaces.push([top, ra, rb]);
+                        cannonFaces.push([top, rb, ra_next]);
+                    }
+
+                    // Lower Faces
+                    for(let i=0; i<5; i++) {
+                        const bot = 1;
+                        const rb = 7 + i;
+                        const ra_next = 2 + ((i + 1) % 5);
+                        const rb_next = 7 + ((i + 1) % 5);
+                        cannonFaces.push([bot, ra_next, rb]);
+                        cannonFaces.push([bot, rb_next, ra_next]);
+                    }
+
+                    shape = new CANNON.ConvexPolyhedron(uniqueVerts, cannonFaces);
+
+                    this.diceMesh = new THREE.Mesh(geometry, mat);
                     this.addFaceStickers(geometry, sides);
 
                 } else {
@@ -714,9 +824,12 @@
 
                     // Ausrichtung nach oben
                     let upVector;
-                    if (sides === 10) {
+                    if (this.diceType === 'd10' || this.diceType === 'd10_v2') {
                          // D10: Zeige zur Spitze (Apex)
-                         const apexY = (center.y > 0) ? 2.4 : -2.4;
+                         let apexH = 2.4;
+                         if (this.diceType === 'd10_v2') apexH = 3.5;
+
+                         const apexY = (center.y > 0) ? apexH : -apexH;
                          upVector = new THREE.Vector3(0, apexY, 0).sub(center).normalize();
                     } else {
                          // Andere: Zeige zum ersten Vertex
