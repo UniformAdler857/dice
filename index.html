@@ -39,11 +39,11 @@
         <div class="bg-gray-700 p-3 rounded-lg">
             <label class="block text-sm font-medium text-gray-300 mb-1">Würfelart</label>
             <select id="diceType" class="w-full bg-gray-900 border border-gray-600 rounded p-2 text-white focus:outline-none focus:border-blue-500 transition">
-                <option value="d6" selected>D6 (Kubus)</option>
-                <option value="d8">D8 (Oktaeder)</option>
-                <option value="d10">D10 (Pentagonal)</option>
-                <option value="d12">D12 (Dodekaeder)</option>
-                <option value="d20">D20 (Ikosaeder)</option>
+                <option value="6" selected>D6 (Kubus)</option>
+                <option value="8">D8 (Oktaeder)</option>
+                <option value="10">D10 (Pentagonal)</option>
+                <option value="12">D12 (Dodekaeder)</option>
+                <option value="20">D20 (Ikosaeder)</option>
             </select>
         </div>
 
@@ -180,7 +180,6 @@
                 this.loadFactor = 0; // Neu: Gezinkter Faktor (0-90)
                 this.chart = null;
                 this.diceColor = 0xff6b35; // Orange als Standard
-                this.diceType = 'd6';
 
                 console.log("App startet...");
                 this.init3D();
@@ -190,7 +189,7 @@
                 this.updateUI();
 
                 // Initialen Würfel erstellen (D6)
-                this.createDice('d6');
+                this.createDice(6);
 
                 document.getElementById('loading').style.display = 'none';
                 this.animate();
@@ -239,7 +238,7 @@
                 // Event Listener für Würfelart
                 document.getElementById('diceType').addEventListener('change', (e) => {
                     this.fullReset();
-                    this.createDice(e.target.value);
+                    this.createDice(parseInt(e.target.value));
                 });
 
                 // Event Listener für Würfelanzahl
@@ -262,7 +261,7 @@
                 document.getElementById('diceColor').addEventListener('input', (e) => {
                     this.diceColor = parseInt(e.target.value.replace('#', ''), 16);
                     document.getElementById('diceColorHex').value = e.target.value.replace('#', '').toLowerCase();
-                    this.createDice(this.diceType);
+                    this.createDice(this.stats.sides);
                 });
 
                 document.getElementById('diceColorHex').addEventListener('input', (e) => {
@@ -270,7 +269,7 @@
                     if (/^[0-9a-fA-F]{6}$/.test(hex)) {
                         this.diceColor = parseInt(hex, 16);
                         document.getElementById('diceColor').value = '#' + hex;
-                        this.createDice(this.diceType);
+                        this.createDice(this.stats.sides);
                     }
                 });
             }
@@ -300,8 +299,8 @@
                 const h = 20;
                 const dist = 12;
 
-                const wallShapeLR = new CANNON.Box(new CANNON.Vec3(wallThick, h, dist + wallThick));
-                const wallShapeFB = new CANNON.Box(new CANNON.Vec3(dist + wallThick, h, wallThick));
+                const wallShapeLR = new CANNON.Box(new CANNON.Vec3(wallThick, h, dist));
+                const wallShapeFB = new CANNON.Box(new CANNON.Vec3(dist, h, wallThick));
                 const ceilShape = new CANNON.Box(new CANNON.Vec3(dist, wallThick, dist));
 
                 const createWall = (pos, shape) => {
@@ -328,8 +327,8 @@
                 const pg = new THREE.PlaneGeometry(100, 100);
                 this.dragPlane = new THREE.Mesh(pg, new THREE.MeshBasicMaterial({ visible: false }));
                 this.dragPlane.rotation.x = -Math.PI / 2;
-                // ERHÖHT: Setze die Ebene höher, um große Würfel (D10) sicher anzuheben
-                this.dragPlane.position.y = 10;
+                // ERHÖHT: Setze die Ebene auf 6 (genug um nicht am Boden zu schleifen, aber nicht zu hoch)
+                this.dragPlane.position.y = 6;
                 this.scene.add(this.dragPlane);
 
                 const getPos = (e) => {
@@ -357,13 +356,10 @@
                         const p = hits[0].point;
                         // Setze das Joint Body auf die Trefferposition
                         this.jointBody.position.set(p.x, p.y, p.z);
-
-                        // Berechne den lokalen Punkt auf dem Würfel
-                        const localPoint = new CANNON.Vec3();
-                        this.diceBody.pointToLocalFrame(new CANNON.Vec3(p.x, p.y, p.z), localPoint);
-
-                        // Erstelle eine PointToPointConstraint zwischen dem Würfel (lokaler Punkt) und dem Joint Body
-                        this.mouseConstraint = new CANNON.PointToPointConstraint(this.diceBody, localPoint, this.jointBody, new CANNON.Vec3(0,0,0));
+                        // Erstelle eine PointToPointConstraint zwischen dem Würfel und dem Joint Body
+                        // CHANGE: Verbinde mit dem Zentrum (0,0,0) statt dem Klickpunkt,
+                        // damit sich der Würfel um seine eigene Achse dreht und nicht um den Klickpunkt schwingt.
+                        this.mouseConstraint = new CANNON.PointToPointConstraint(this.diceBody, new CANNON.Vec3(0,0,0), this.jointBody, new CANNON.Vec3(0,0,0));
                         this.world.addConstraint(this.mouseConstraint);
                         this.diceBody.wakeUp(); // Würfel aufwecken, damit er sich bewegen kann
                     }
@@ -381,7 +377,7 @@
                         // Begrenze die Bewegung, um ein Entkommen aus dem Käfig zu verhindern
                         this.jointBody.position.set(
                             Math.max(-lim, Math.min(lim, p.x)),
-                            Math.max(5, Math.min(15, p.y)),
+                            Math.max(1, Math.min(10, p.y)),
                             Math.max(-lim, Math.min(lim, p.z))
                         );
                     }
@@ -429,24 +425,16 @@
 
                 // Unterstreichung für 6 und 9
                 if (text == 6 || text == 9) {
-                    ctx.fillStyle = 'white';
-                    ctx.fillRect(w/2 - 60, h/2 + 100, 120, 20); // Zentrierter Balken als Unterstrich
+                    ctx.font = 'bold 250px Arial'; // Gleicher Font für korrekte Metrik
+                    ctx.fillText('_', w/2, h/2 + 110); // Leicht versetzt nach unten
                 }
 
                 return new THREE.CanvasTexture(cvs);
             }
 
-            createDice(type) {
+            createDice(sides) {
                 if (this.diceMesh) this.scene.remove(this.diceMesh);
                 if (this.diceBody) this.world.removeBody(this.diceBody);
-
-                this.diceType = type;
-                let sides = 6;
-                if (type === 'd6') sides = 6;
-                else if (type === 'd8') sides = 8;
-                else if (type === 'd10') sides = 10;
-                else if (type === 'd12') sides = 12;
-                else if (type === 'd20') sides = 20;
 
                 this.stats.sides = sides;
                 this.faceData = [];
@@ -460,7 +448,7 @@
                     color: this.diceColor, flatShading: true, roughness: 0.3, metalness: 0.2
                 });
 
-                if (type === 'd6') {
+                if (sides === 6) {
                     geometry = new THREE.BoxGeometry(size, size, size);
                     shape = new CANNON.Box(new CANNON.Vec3(size/2, size/2, size/2));
                     // D6 Texturen direkt
@@ -474,116 +462,180 @@
                         {n: new THREE.Vector3(0,1,0), v:2}, {n: new THREE.Vector3(0,-1,0), v:5}, // Y+ und Y-
                         {n: new THREE.Vector3(0,0,1), v:3}, {n: new THREE.Vector3(0,0,-1), v:4}  // Z+ und Z-
                     ];
-                } else if (type === 'd10') {
-                    // D10: Pentagonal Trapezohedron - Korrekte Geometrie
-                    // Die Seitenflächen sind Drachenvierecke (Kites).
-                    // Damit diese Planar sind, gibt es ein festes Verhältnis zwischen Apex-Höhe (H) und Ring-Höhe (h).
-                    // Verhältnis: h = H * (1 - cos(36°)) / (1 + cos(36°)) ≈ 0.10557 * H
+                } else if (sides === 10) {
+                    // D10: Pentagonal Trapezohedron (Kite Form) - "Echter" D10
+                    // Vertices: 2 Poles, 10 Equatorial (Zig-Zag)
+                    const R = 4;    // Radius
+                    const H = 4.5;  // Height of Poles
+                    const d = 0.5;  // Vertical offset of rings
 
-                    const R = 3.0; // Radius der Äquator-Ringe
-                    const H = 3.5; // Höhe der Spitze (Apex)
+                    const vertices = [];
+                    // 0: Top Pole
+                    vertices.push(0, H, 0);
+                    // 1: Bottom Pole
+                    vertices.push(0, -H, 0);
 
-                    // Berechne die korrekte Höhe der Ringe für planare Flächen
-                    // cos(36°) = (1 + sqrt(5)) / 4 ≈ 0.809017
-                    const cos36 = Math.cos(36 * Math.PI / 180);
-                    const h = H * (1 - cos36) / (1 + cos36);
-
-                    // Vertices generieren
-                    // 0: Top Apex (0, H, 0)
-                    // 1: Bottom Apex (0, -H, 0)
-                    // 2-6: Ring A (High) bei y = h, winkel 0, 72...
-                    // 7-11: Ring B (Low) bei y = -h, winkel 36, 108...
-
-                    const uniqueVerts = [];
-                    uniqueVerts.push(new CANNON.Vec3(0, H, 0));  // 0: Top
-                    uniqueVerts.push(new CANNON.Vec3(0, -H, 0)); // 1: Bottom
-
-                    // Ring A (y = h) - Winkel 0, 72, 144, 216, 288
+                    // Ring A (Upper Zig) - Indices 2-6
                     for(let i=0; i<5; i++) {
                         const angle = (i * 72) * (Math.PI / 180);
-                        uniqueVerts.push(new CANNON.Vec3(R * Math.cos(angle), h, R * Math.sin(angle)));
+                        vertices.push(R * Math.cos(angle), d, R * Math.sin(angle));
                     }
 
-                    // Ring B (y = -h) - Winkel 36, 108, 180, 252, 324
+                    // Ring B (Lower Zag) - Indices 7-11
+                    // Offset by 36 degrees
                     for(let i=0; i<5; i++) {
                         const angle = (i * 72 + 36) * (Math.PI / 180);
-                        uniqueVerts.push(new CANNON.Vec3(R * Math.cos(angle), -h, R * Math.sin(angle)));
+                        vertices.push(R * Math.cos(angle), -d, R * Math.sin(angle));
                     }
 
-                    // Mesh Geometrie bauen
-                    const vertices = [];
+                    // Faces (Triangulated Kites)
+                    // A Kite face connects: Pole -> RingA_i -> RingB_i -> RingA_next (for top)
+                    // Actually standard Trapezohedron connectivity:
+                    // Top faces connect Top to zigzag between A and B?
+                    // Let's use simpler Kite Logic visually consistent with D10.
+                    // Top Kites: Top(0), RingA(2+i), RingB(7+i), RingA(2+(i+1)%5) -- No, Ring B is "between"
+                    // Connectivity: Top -> RingA_i -> RingB_i -> RingA_(i+1) ??
+                    // Let's build Kites from: Top, A_i, B_i, A_next? No.
 
-                    // Hilfsfunktion zum Hinzufügen eines Dreiecks
-                    const addTri = (idx1, idx2, idx3) => {
-                        vertices.push(uniqueVerts[idx1].x, uniqueVerts[idx1].y, uniqueVerts[idx1].z);
-                        vertices.push(uniqueVerts[idx2].x, uniqueVerts[idx2].y, uniqueVerts[idx2].z);
-                        vertices.push(uniqueVerts[idx3].x, uniqueVerts[idx3].y, uniqueVerts[idx3].z);
-                    };
+                    // Correct Connectivity for Trapezohedron:
+                    // Upper Kites: Top(0), RingA_i, RingB_i, RingA_(prev/next)?
+                    // Let's try: Upper Kite i connects Top, RingA[i], RingB[i], RingA[(i+1)%5]? No.
+                    // The "Kite" uses one point from Top, one from Bottom? No.
 
-                    // Wir bauen die 10 Drachenvierecke aus je 2 Dreiecken.
-                    // Durch die korrekte Höhe h sind diese Dreiecke koplanar.
+                    // Manual Face Construction for 10 Kites:
+                    // 5 Upper Kites: Top(0), RingA[i], RingB[i], RingA[(i-1+5)%5]?
+                    // Let's trace edges of a standard D10.
+                    // Top connects to all 5 Ring A vertices.
+                    // Bottom connects to all 5 Ring B vertices.
+                    // ZigZag connects Ring A to Ring B.
+                    // Faces are Kites: Top -> Ring A_i -> Ring B_i -> Ring A_(i+1)? No, that's a triangle fan.
 
-                    // 5 Obere Flächen: Top -> RingA[i] -> RingB[i] -> RingA[i+1]
-                    // (Top, RingA_i, RingB_i) und (Top, RingB_i, RingA_next)
+                    // Faces are: (Top, RingA_i, RingB_i, RingA_i+1)? No.
+                    // The Kite is: Top, RingA_i, RingB_i, RingA_i ??? No.
+
+                    // Let's use the explicit indices that form the solid.
+                    // Upper Face i: Top(0), RingA[i], RingB[i], RingA[(i+1)%5] -> This is 2 triangles.
+                    // Wait, Ring B is shifted.
+                    // Face i: Top(0), RingA[i], RingB[i], RingA[i+1] ???
+                    // Let's assume Upper Faces meet at Top.
+                    // A face is bounded by (Top, RingA_i), (RingA_i, RingB_i), (RingB_i, RingA_next), (RingA_next, Top).
+                    // This creates a Quad: 0, 2+i, 7+i, 2+(i+1)%5.
+
+                    const indices = [];
+                    // 5 Upper Kites (split into 2 triangles each)
                     for(let i=0; i<5; i++) {
                         const top = 0;
-                        const ra = 2 + i;
+                        const ra_curr = 2 + i;
                         const rb = 7 + i;
-                        const ra_next = 2 + ((i+1)%5);
+                        const ra_next = 2 + ((i + 1) % 5);
 
-                        addTri(top, ra, rb);
-                        addTri(top, rb, ra_next);
+                        // Triangle 1
+                        indices.push(top, ra_curr, rb);
+                        // Triangle 2
+                        indices.push(top, rb, ra_next);
                     }
 
-                    // 5 Untere Flächen: Bottom -> RingB[i] -> RingA[next] -> RingB[next]
-                    // (Bot, RingA_next, RingB_i) und (Bot, RingB_next, RingA_next)
+                    // 5 Lower Kites
+                    // Bounded by Bottom(1), RingB_i, RingA_(next), RingB_(next)
                     for(let i=0; i<5; i++) {
                         const bot = 1;
-                        const rb = 7 + i;
-                        const ra_next = 2 + ((i+1)%5);
-                        const rb_next = 7 + ((i+1)%5);
+                        const rb_curr = 7 + i;
+                        const ra_next = 2 + ((i + 1) % 5); // Connects to the 'valley' in upper ring
+                        const rb_next = 7 + ((i + 1) % 5);
 
-                        addTri(bot, ra_next, rb);
-                        addTri(bot, rb_next, ra_next);
+                        // Triangle 1
+                        indices.push(bot, ra_next, rb_curr);
+                        // Triangle 2
+                        indices.push(bot, rb_next, ra_next);
                     }
 
                     geometry = new THREE.BufferGeometry();
                     geometry.setAttribute('position', new THREE.Float32BufferAttribute(vertices, 3));
+                    geometry.setIndex(indices);
                     geometry.computeVertexNormals();
 
-                    // Physics Shape (ConvexPolyhedron)
-                    // Wir nutzen dieselben unique Vertices und definieren die Flächen-Indices
-                    const cannonFaces = [];
+                    // Physics (ConvexPolyhedron)
+                    const pts = [];
+                    for(let i=0; i<vertices.length; i+=3) {
+                        pts.push(new CANNON.Vec3(vertices[i], vertices[i+1], vertices[i+2]));
+                    }
+                    const faces = [];
+                    for(let i=0; i<indices.length; i+=3) {
+                        faces.push([indices[i], indices[i+1], indices[i+2]]);
+                    }
+                    shape = new CANNON.ConvexPolyhedron(pts, faces);
 
-                    // Die Flächen müssen gegen den Uhrzeigersinn (CCW) definiert werden (von außen gesehen)
-                    // Upper Faces
+                    this.diceMesh = new THREE.Mesh(geometry, mat);
+
+                    // Manually add stickers for D10 to ensure perfect placement on Kites
+                    this.faceData = [];
+                    this.diceMesh.children.forEach(c => this.diceMesh.remove(c)); // Clear old
+
+                    // Helper to add sticker
+                    const addSticker = (vIndices, val, isUpper) => {
+                        // Calculate center of the Quad (average of 4 points)
+                        const center = new THREE.Vector3();
+                        vIndices.forEach(idx => {
+                            center.add(new THREE.Vector3(vertices[idx*3], vertices[idx*3+1], vertices[idx*3+2]));
+                        });
+                        center.divideScalar(4);
+
+                        // Calculate Normal (Top/Bottom -> Center)
+                        // This assumes the die is convex and 0,0,0 is inside.
+                        const normal = center.clone().normalize();
+
+                        this.faceData.push({ n: normal.clone(), v: val });
+
+                        const stickerTex = this.createStickerTexture(val);
+                        const stickerMat = new THREE.MeshBasicMaterial({
+                            map: stickerTex, transparent: true,
+                            polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2,
+                            depthWrite: false
+                        });
+
+                        const sSize = 2.0;
+                        const stickerGeo = new THREE.PlaneGeometry(sSize, sSize);
+                        const sticker = new THREE.Mesh(stickerGeo, stickerMat);
+
+                        sticker.position.copy(center).add(normal.clone().multiplyScalar(0.05));
+
+                        // Orientation
+                        const target = new THREE.Vector3(0, 0, 1);
+                        const quat = new THREE.Quaternion();
+                        quat.setFromUnitVectors(target, normal);
+                        sticker.setRotationFromQuaternion(quat);
+
+                        // Rotate to point upright (Towards Pole)
+                        // Pole is (0, H, 0) or (0, -H, 0)
+                        const poleY = isUpper ? H : -H;
+                        const pole = new THREE.Vector3(0, poleY, 0);
+                        const upVec = pole.sub(center).normalize();
+
+                        const localUp = upVec.clone().applyQuaternion(quat.clone().invert());
+                        const angle = Math.atan2(localUp.x, localUp.y);
+                        sticker.rotateZ(-angle);
+
+                        this.diceMesh.add(sticker);
+                    };
+
+                    // Add Stickers for 5 Upper Faces
                     for(let i=0; i<5; i++) {
                         const top = 0;
-                        const ra = 2 + i;
+                        const ra_curr = 2 + i;
                         const rb = 7 + i;
                         const ra_next = 2 + ((i + 1) % 5);
-
-                        // Ein Drachenviereck als 2 Dreiecke für Cannon?
-                        // Nein, ConvexPolyhedron kann n-gons, aber Dreiecke sind sicherer/einfacher.
-                        // Wir nehmen dieselbe Struktur wie beim Rendering.
-                        cannonFaces.push([top, ra, rb]);
-                        cannonFaces.push([top, rb, ra_next]);
+                        // Standard D10 numbering is complex, we use 1..10 sequential for simplicity
+                        // Upper faces usually odd? Let's just do 1-5 top, 6-10 bottom
+                        addSticker([top, ra_curr, rb, ra_next], i+1, true);
                     }
-
-                    // Lower Faces
+                     // Add Stickers for 5 Lower Faces
                     for(let i=0; i<5; i++) {
                         const bot = 1;
-                        const rb = 7 + i;
+                        const rb_curr = 7 + i;
                         const ra_next = 2 + ((i + 1) % 5);
                         const rb_next = 7 + ((i + 1) % 5);
-
-                        cannonFaces.push([bot, ra_next, rb]);
-                        cannonFaces.push([bot, rb_next, ra_next]);
+                        addSticker([bot, ra_next, rb_curr, rb_next], i+6, false);
                     }
-
-                    shape = new CANNON.ConvexPolyhedron(uniqueVerts, cannonFaces);
-                    this.diceMesh = new THREE.Mesh(geometry, mat);
-                    this.addFaceStickers(geometry, sides);
 
                 } else {
                     // Andere Komplexe Geometrien (D8, D12, D20)
@@ -625,18 +677,23 @@
                 // Entferne alte Sticker, falls vorhanden
                 this.diceMesh.children.forEach(c => this.diceMesh.remove(c));
 
+                // Bei BufferGeometry ohne Index (oder manuell indiziert) holen wir die Faces
+                // Wir müssen unterscheiden, ob indiziert oder nicht.
+                // Unsere D10 ist indiziert, die anderen Standard-Geos sind toNonIndexed().
+
                 let rawFaces = [];
 
                 if (geometry.index) {
-                    // Indizierte Geometrie
+                    // Indizierte Geometrie (unser D10)
                     const pos = geometry.attributes.position;
                     const idx = geometry.index;
                     for(let i=0; i<idx.count; i+=3) {
                         const a = new THREE.Vector3().fromBufferAttribute(pos, idx.getX(i));
                         const b = new THREE.Vector3().fromBufferAttribute(pos, idx.getX(i+1));
                         const c = new THREE.Vector3().fromBufferAttribute(pos, idx.getX(i+2));
+                        const center = new THREE.Vector3().add(a).add(b).add(c).divideScalar(3);
                         const normal = new THREE.Vector3().crossVectors(new THREE.Vector3().subVectors(b, a), new THREE.Vector3().subVectors(c, a)).normalize();
-                        rawFaces.push({ verts: [a,b,c], n: normal });
+                        rawFaces.push({ c: center, n: normal, vA: a, vB: b, vC: c });
                     }
                 } else {
                     // Nicht-indizierte Geometrie
@@ -645,56 +702,32 @@
                         const a = new THREE.Vector3().fromBufferAttribute(pos, i);
                         const b = new THREE.Vector3().fromBufferAttribute(pos, i+1);
                         const c = new THREE.Vector3().fromBufferAttribute(pos, i+2);
+                        const center = new THREE.Vector3().add(a).add(b).add(c).divideScalar(3);
                         const normal = new THREE.Vector3().crossVectors(new THREE.Vector3().subVectors(b, a), new THREE.Vector3().subVectors(c, a)).normalize();
-                        rawFaces.push({ verts: [a,b,c], n: normal });
+                        rawFaces.push({ c: center, n: normal, vA: a, vB: b, vC: c });
                     }
                 }
 
-                // Gruppiere nach Normale (Wichtig für D12/Pentagone)
-                const faceGroups = [];
-                const THRESHOLD = 0.1;
-
+                // Filtere eindeutige Flächen
+                const uniqueFaces = [];
                 rawFaces.forEach(raw => {
-                    let match = null;
-                    for (let group of faceGroups) {
-                        if (group.n.distanceTo(raw.n) < THRESHOLD) {
-                            match = group;
-                            break;
+                    let found = false;
+                    for(let u of uniqueFaces) {
+                        if (u.n.distanceTo(raw.n) < 0.15) {
+                            if (sides !== 8 || u.c.distanceTo(raw.c) < 0.15) {
+                                found = true;
+                                break;
+                            }
                         }
                     }
-
-                    if (match) {
-                        match.verts.push(...raw.verts);
-                    } else {
-                        faceGroups.push({ n: raw.n, verts: [...raw.verts] });
-                    }
+                    if (!found && uniqueFaces.length < sides) uniqueFaces.push(raw);
                 });
-
-                // Begrenze auf erwartete Seitenanzahl
-                if (faceGroups.length > sides) {
-                    // Einfache Heuristik: Nimm die größten Flächen oder einfach die ersten
-                    faceGroups.splice(sides);
-                }
 
                 this.faceData = [];
 
-                faceGroups.forEach((group, index) => {
-                    // Berechne Zentrum (Centroid) aller Vertices der Gruppe
-                    const uniqueVerts = [];
-                    group.verts.forEach(v => {
-                        let present = false;
-                        for(let uv of uniqueVerts) {
-                             if(uv.distanceTo(v) < 0.01) { present = true; break; }
-                        }
-                        if(!present) uniqueVerts.push(v);
-                    });
-
-                    const center = new THREE.Vector3();
-                    uniqueVerts.forEach(v => center.add(v));
-                    center.divideScalar(uniqueVerts.length);
-
+                uniqueFaces.forEach((face, index) => {
                     const val = index + 1;
-                    this.faceData.push({ n: group.n.clone(), v: val });
+                    this.faceData.push({ n: face.n.clone(), v: val });
 
                     const stickerTex = this.createStickerTexture(val);
                     const stickerMat = new THREE.MeshBasicMaterial({
@@ -706,43 +739,37 @@
                         depthWrite: false
                     });
 
-                    // Berechne Größe basierend auf maximalem Abstand zum Zentrum
-                    let maxDist = 0;
-                    uniqueVerts.forEach(v => {
-                        const d = v.distanceTo(center);
-                        if(d > maxDist) maxDist = d;
-                    });
+                    const sideVector = face.vB.clone().sub(face.vA);
+                    let sSize = sideVector.length() * 0.8;
 
-                    let sSize = maxDist * 1.5;
-
-                    if (sides === 10) sSize = maxDist * 1.3;
-                    if (sides === 12) sSize = maxDist * 1.6;
-                    if (sides === 20) sSize = maxDist * 1.3;
+                    if (sides === 12) sSize = sideVector.length() * 1.5;
+                    else if (sides === 20) sSize = sideVector.length() * 1;
 
                     const stickerGeo = new THREE.PlaneGeometry(sSize, sSize);
                     const sticker = new THREE.Mesh(stickerGeo, stickerMat);
 
+                    // 1. Positionieren
                     const liftAmount = 0.05;
-                    sticker.position.copy(center).add(group.n.clone().multiplyScalar(liftAmount));
+                    sticker.position.copy(face.c).add(face.n.clone().multiplyScalar(liftAmount));
 
+                    // 2. Ausrichtung der Normalen
                     const target = new THREE.Vector3(0, 0, 1);
                     const quat = new THREE.Quaternion();
-                    quat.setFromUnitVectors(target, group.n.clone());
+                    quat.setFromUnitVectors(target, face.n.clone());
                     sticker.setRotationFromQuaternion(quat);
 
-                    // Ausrichtung nach oben
+                    // 3. Korrektur-Rotation
+                    // Für D10 ist es besser, wenn die Spitzen zur Y-Achse (Spitze des Würfels) zeigen.
                     let upVector;
-                    if (this.diceType === 'd10') {
-                         // D10: Zeige zur Spitze (Apex)
-                         // Die Geometrie wird neu generiert mit H=3.5, also nutzen wir das hardcoded oder dynamisch
-                         // Da wir jetzt Standardgrößen verwenden, ist apexH = 3.5 korrekt (wie im alten d10_v2)
-                         let apexH = 3.5;
-
-                         const apexY = (center.y > 0) ? apexH : -apexH;
-                         upVector = new THREE.Vector3(0, apexY, 0).sub(center).normalize();
+                    if (sides === 10) {
+                         // Die Spitze des D10 liegt bei Y=+/-height.
+                         // Wir wollen, dass der "Oben"-Vektor der Zahl zur Spitze zeigt.
+                         // Wenn y > 0 (Obere Hälfte), ist Spitze bei (0, h, 0).
+                         // Wenn y < 0 (Untere Hälfte), ist Spitze bei (0, -h, 0).
+                         const apexY = (face.c.y > 0) ? 2.5 : -2.5; // height ist 2.5
+                         upVector = new THREE.Vector3(0, apexY, 0).sub(face.c).normalize();
                     } else {
-                         // Andere: Zeige zum ersten Vertex
-                         upVector = uniqueVerts[0].clone().sub(center).normalize();
+                        upVector = face.vA.clone().sub(face.c).normalize();
                     }
 
                     const localUpVector = upVector.clone().applyQuaternion(quat.clone().invert());
@@ -785,7 +812,7 @@
                     new CANNON.Vec3(0,0,0) // Wirkt im Zentrum
                 );
                 // Zusätzlicher Drehimpuls
-                this.diceBody.angularVelocity.set((Math.random()-0.5)*40, (Math.random()-0.5)*40, (Math.random()-0.5)*40);
+                this.diceBody.angularVelocity.set(Math.random()*20, Math.random()*20, Math.random()*20);
                 this.diceBody.wakeUp();
             }
 
