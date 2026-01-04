@@ -573,12 +573,18 @@
 
                     // Helper to add sticker
                     const addSticker = (vIndices, val, isUpper) => {
-                        // Calculate center of the Quad (average of 4 points)
-                        const center = new THREE.Vector3();
-                        vIndices.forEach(idx => {
-                            center.add(new THREE.Vector3(vertices[idx*3], vertices[idx*3+1], vertices[idx*3+2]));
-                        });
-                        center.divideScalar(4);
+                        // Calculate center: Use midpoint of the long diagonal (Pole to Opposite Tip)
+                        // This avoids bias towards the "fat" end of the kite.
+                        // Upper indices: [Pole, Side1, Tip, Side2] -> Tip is index 2
+                        // Lower indices: [Pole, Tip, Side1, Side2] -> Tip is index 1
+
+                        const poleIdx = vIndices[0];
+                        const tipIdx = isUpper ? vIndices[2] : vIndices[1];
+
+                        const poleV = new THREE.Vector3(vertices[poleIdx*3], vertices[poleIdx*3+1], vertices[poleIdx*3+2]);
+                        const tipV = new THREE.Vector3(vertices[tipIdx*3], vertices[tipIdx*3+1], vertices[tipIdx*3+2]);
+
+                        const center = new THREE.Vector3().addVectors(poleV, tipV).multiplyScalar(0.5);
 
                         // Calculate Normal (Top/Bottom -> Center)
                         // This assumes the die is convex and 0,0,0 is inside.
@@ -708,19 +714,50 @@
                     }
                 }
 
-                // Filtere eindeutige Flächen
-                const uniqueFaces = [];
+                // Filtere eindeutige Flächen und gruppiere Triangles
+                const faceGroups = [];
                 rawFaces.forEach(raw => {
-                    let found = false;
-                    for(let u of uniqueFaces) {
-                        if (u.n.distanceTo(raw.n) < 0.15) {
-                            if (sides !== 8 || u.c.distanceTo(raw.c) < 0.15) {
-                                found = true;
-                                break;
-                            }
-                        }
+                    let foundGroup = null;
+                    for (let g of faceGroups) {
+                         // Gruppiere nach Normalen-Vektor (für D12 entscheidend, da 3 Triangles pro Fläche)
+                         if (g.n.distanceTo(raw.n) < 0.15) {
+                             // Zusätzlicher Check für D8 (falls Geometrie dort anders tesselated ist)
+                             if (sides !== 8 || g.c.distanceTo(raw.c) < 0.15) {
+                                 foundGroup = g;
+                                 break;
+                             }
+                         }
                     }
-                    if (!found && uniqueFaces.length < sides) uniqueFaces.push(raw);
+
+                    if (!foundGroup) {
+                        foundGroup = {
+                            n: raw.n,
+                            c: raw.c, // Start-Zentrum (wird später überschrieben)
+                            vertices: [],
+                            vA: raw.vA, vB: raw.vB // Für Größenberechnung behalten wir Referenzen
+                        };
+                        faceGroups.push(foundGroup);
+                    }
+
+                    foundGroup.vertices.push(raw.vA, raw.vB, raw.vC);
+                });
+
+                // Berechne das wahre Zentrum jeder Fläche
+                const uniqueFaces = faceGroups.slice(0, sides).map(g => {
+                     const uniqueVs = [];
+                     // Eindeutige Vertices filtern
+                     g.vertices.forEach(v => {
+                         let exists = false;
+                         for(let uv of uniqueVs) if (uv.distanceTo(v) < 0.01) { exists = true; break; }
+                         if(!exists) uniqueVs.push(v);
+                     });
+
+                     // Durchschnitt aller Vertices
+                     const center = new THREE.Vector3();
+                     uniqueVs.forEach(v => center.add(v));
+                     if(uniqueVs.length > 0) center.divideScalar(uniqueVs.length);
+
+                     return { c: center, n: g.n, vA: g.vA, vB: g.vB };
                 });
 
                 this.faceData = [];
