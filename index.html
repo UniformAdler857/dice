@@ -299,7 +299,8 @@
                 const h = 20;
                 const dist = 12;
 
-                const wallShapeLR = new CANNON.Box(new CANNON.Vec3(wallThick, h, dist));
+                // Fix: Extend side walls to overlap ends of front/back walls to prevent corner gaps
+                const wallShapeLR = new CANNON.Box(new CANNON.Vec3(wallThick, h, dist + wallThick * 2));
                 const wallShapeFB = new CANNON.Box(new CANNON.Vec3(dist, h, wallThick));
                 const ceilShape = new CANNON.Box(new CANNON.Vec3(dist, wallThick, dist));
 
