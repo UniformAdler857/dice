@@ -785,7 +785,7 @@
                     new CANNON.Vec3(0,0,0) // Wirkt im Zentrum
                 );
                 // Zusätzlicher Drehimpuls
-                this.diceBody.angularVelocity.set(Math.random()*20, Math.random()*20, Math.random()*20);
+                this.diceBody.angularVelocity.set((Math.random()-0.5)*40, (Math.random()-0.5)*40, (Math.random()-0.5)*40);
                 this.diceBody.wakeUp();
             }
 
