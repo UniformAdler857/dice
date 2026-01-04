@@ -573,22 +573,49 @@
 
                     // Helper to add sticker
                     const addSticker = (vIndices, val, isUpper) => {
-                        // Calculate center: Use midpoint of the long diagonal (Pole to Opposite Tip)
-                        // This avoids bias towards the "fat" end of the kite.
-                        // Upper indices: [Pole, Side1, Tip, Side2] -> Tip is index 2
-                        // Lower indices: [Pole, Tip, Side1, Side2] -> Tip is index 1
+                        // Identify all 4 vertices of the Kite to calculate proper centroid
+                        let poleIdx, tipIdx, side1Idx, side2Idx;
+                        if (isUpper) {
+                            // Upper indices: [Pole, Side1, Tip, Side2]
+                            poleIdx = vIndices[0];
+                            side1Idx = vIndices[1];
+                            tipIdx = vIndices[2];
+                            side2Idx = vIndices[3];
+                        } else {
+                            // Lower indices: [Pole, Tip, Side1, Side2]
+                            poleIdx = vIndices[0];
+                            tipIdx = vIndices[1];
+                            side1Idx = vIndices[2];
+                            side2Idx = vIndices[3];
+                        }
 
-                        const poleIdx = vIndices[0];
-                        const tipIdx = isUpper ? vIndices[2] : vIndices[1];
+                        const getVec = (idx) => new THREE.Vector3(vertices[idx*3], vertices[idx*3+1], vertices[idx*3+2]);
+                        const poleV = getVec(poleIdx);
+                        const tipV = getVec(tipIdx);
+                        const side1V = getVec(side1Idx);
+                        const side2V = getVec(side2Idx);
 
-                        const poleV = new THREE.Vector3(vertices[poleIdx*3], vertices[poleIdx*3+1], vertices[poleIdx*3+2]);
-                        const tipV = new THREE.Vector3(vertices[tipIdx*3], vertices[tipIdx*3+1], vertices[tipIdx*3+2]);
+                        // Calculate Geometric Centroid of the Kite
+                        // Weighted average of the vertices (Pole and Tip counted twice due to triangulation symmetry)
+                        // Centroid = (2*Pole + 2*Tip + Side1 + Side2) / 6
+                        const center = poleV.clone().multiplyScalar(2)
+                            .add(tipV.clone().multiplyScalar(2))
+                            .add(side1V).add(side2V)
+                            .divideScalar(6);
 
-                        const center = new THREE.Vector3().addVectors(poleV, tipV).multiplyScalar(0.5);
+                        // Calculate Normal using cross product of diagonals
+                        // Diagonal 1: Pole - Tip (Vertical)
+                        // Diagonal 2: Side1 - Side2 (Horizontal)
+                        const diagV = poleV.clone().sub(tipV);
+                        const diagH = side1V.clone().sub(side2V);
 
-                        // Calculate Normal (Top/Bottom -> Center)
-                        // This assumes the die is convex and 0,0,0 is inside.
-                        const normal = center.clone().normalize();
+                        // Determine normal direction
+                        let normal = new THREE.Vector3().crossVectors(diagH, diagV).normalize();
+
+                        // Ensure normal points away from origin (convex hull)
+                        if (normal.dot(center) < 0) {
+                            normal.negate();
+                        }
 
                         this.faceData.push({ n: normal.clone(), v: val });
 
